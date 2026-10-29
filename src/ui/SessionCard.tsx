@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Aggregates, SessionStat } from '../core/aggregate'
 import { fmtCredit, fmtDateTime, fmtInt, fmtTokens } from '../core/format'
+import { SOURCE_META } from '../core/types'
 import type { Palette } from './theme'
 import { Chart } from './Chart'
 
@@ -36,7 +37,7 @@ export function SessionCard({
   }, [agg, modelFocus])
 
   const rows = useMemo(() => {
-    const list = modelFocus ? agg.sessions.filter((s) => (s.session.modelId || '未记录模型') === modelFocus) : [...agg.sessions]
+    const list = modelFocus ? agg.sessions.filter((s) => s.models.includes(modelFocus)) : [...agg.sessions]
     list.sort((a, b) => {
       const pick = (s: SessionStat) => (sortKey === 'last' ? s.lastTs : sortKey === 'requests' ? s.requests : sortKey === 'credit' ? s.credit : s.total)
       const diff = pick(a) - pick(b)
@@ -141,12 +142,17 @@ export function SessionCard({
                 <tr key={s.session.id} className={on ? 'on' : ''} onClick={() => setSelectedId(on ? null : s.session.id)}>
                   <td className="l">
                     <span className="session-title">
-                      <span className={`tag ${s.session.type === 'ask' ? 'ask' : 'craft'}`}>{s.session.type}</span>
+                      <span className={`src-tag ${s.session.source}`}>{SOURCE_META[s.session.source].short}</span>
+                      {s.session.isSubAgent ? <span className="tag sub">sub</span> : null}
+                      {s.session.source === 'codebuddy' ? <span className={`tag ${s.session.type === 'ask' ? 'ask' : 'craft'}`}>{s.session.type}</span> : null}
                       <span>{s.session.title || '（无标题会话）'}</span>
                     </span>
                   </td>
                   <td className="l">{s.projectName}</td>
-                  <td>{s.session.modelId || '未记录'}</td>
+                  <td title={s.models.join(' · ')}>
+                    {s.modelKey}
+                    {s.models.length > 1 ? <small className="multi"> +{s.models.length - 1}</small> : null}
+                  </td>
                   <td>{fmtInt(s.requests)}</td>
                   <td>{fmtTokens(s.total)}</td>
                   <td>{fmtCredit(s.credit)}</td>
@@ -165,9 +171,10 @@ export function SessionCard({
             <div>
               <h4>{selected.session.title || '（无标题会话）'}</h4>
               <div className="meta">
+                <span className={`src-tag ${selected.session.source}`}>{SOURCE_META[selected.session.source].short}</span>
                 {selected.projectName}
-                {selected.session.cwd ? ` · ${selected.session.cwd}` : ''} · {selected.session.modelId || '未记录模型'} · {fmtDateTime(selected.firstTs)} →{' '}
-                {fmtDateTime(selected.lastTs)}
+                {selected.session.cwd ? ` · ${selected.session.cwd}` : ''} · {selected.models.join(' · ') || '未记录模型'} ·{' '}
+                {fmtDateTime(selected.firstTs)} → {fmtDateTime(selected.lastTs)}
               </div>
             </div>
             <div className="meta">
@@ -181,7 +188,7 @@ export function SessionCard({
                 <thead>
                   <tr>
                     <th className="l">时间</th>
-                    <th className="l">类型</th>
+                    <th className="l">模型 / 类型</th>
                     <th>输入</th>
                     <th>输出</th>
                     <th>缓存</th>
@@ -194,10 +201,10 @@ export function SessionCard({
                     .filter((r) => r.ts >= agg.window.start && r.ts < agg.window.end)
                     .slice()
                     .reverse()
-                    .map((r) => (
-                      <tr key={r.ts}>
+                    .map((r, i) => (
+                      <tr key={r.key ?? `${r.ts}-${i}`}>
                         <td className="l">{fmtDateTime(r.ts)}</td>
-                        <td className="l">{r.type}</td>
+                        <td className="l">{r.model ?? r.type}</td>
                         <td>{fmtInt(r.input)}</td>
                         <td>{fmtInt(r.output)}</td>
                         <td>{fmtInt(r.cache)}</td>

@@ -85,7 +85,7 @@ describe('buildDataset', () => {
   })
 
   it('会话元数据：标题/路径来自会话库，模型来自项目索引', () => {
-    const c1 = ds.sessions.find((s) => s.id === 'c1')!
+    const c1 = ds.sessions.find((s) => s.rawId === 'c1')!
     expect(c1.title).toBe('重构鉴权中间件')
     expect(c1.cwd).toBe('d:/work/portal')
     expect(c1.modelId).toBe('model-x')
@@ -123,9 +123,9 @@ describe('buildDataset', () => {
       'codebuddy-sessions.vscdb',
     )
 
-    expect(after.sessions.find((s) => s.id === 'c1')!.cwd).toBe('d:/work/portal')
-    expect(after.sessions.find((s) => s.id === 'c3')!.title).toBe('另一个会话')
-    expect(after.sessions.find((s) => s.id === 'c2')!.title).toBe('解释代码') // 原有回退标题保留
+    expect(after.sessions.find((s) => s.rawId === 'c1')!.cwd).toBe('d:/work/portal')
+    expect(after.sessions.find((s) => s.rawId === 'c3')!.title).toBe('另一个会话')
+    expect(after.sessions.find((s) => s.rawId === 'c2')!.title).toBe('解释代码') // 原有回退标题保留
     expect(after.selfCheck.sessionsWithoutCwd).toBe(1)
     expect(after.sources.sessionMetaCount).toBe(2)
     expect(after.sources.sessionsDb).toBe('codebuddy-sessions.vscdb')

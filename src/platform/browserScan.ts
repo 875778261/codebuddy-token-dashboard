@@ -1,6 +1,6 @@
-import type { ScannedFile } from '../core/parse'
+import type { LazyFile, ScannedFile } from '../core/parse'
 import { parseSessionsDb } from '../core/sessions'
-import type { SessionMeta, SourceInfo } from '../core/types'
+import type { SessionMeta } from '../core/types'
 
 /** 用户大概率会选 Data 根，也可能直接选到 history 或某个账号目录，都允许。 */
 const SKIP_DIRS = new Set([
@@ -14,32 +14,38 @@ const SKIP_DIRS = new Set([
   'brain',
   'node_modules',
   'CachedData',
+  'CachedProfilesData',
   'logs',
   'GPUCache',
   'Local Storage',
   'Session Storage',
   'Cache',
   'Code Cache',
+  'Crashpad',
 ])
 
 const MAX_DEPTH = 9
 const SESSIONS_DB = 'codebuddy-sessions.vscdb'
+/** WorkBuddy 数据根：只有 projects/ 有用量，app/plugins/workspace 合计 900MB+，绝不能进 */
+const WB_ROOT = '.workbuddy'
 
 export interface ScanResult {
-  files: ScannedFile[]
+  /** CodeBuddy 索引文件（已读文本，体积小） */
+  cbFiles: ScannedFile[]
+  /** WorkBuddy jsonl（惰性读取，逐个解析后就丢弃） */
+  wbFiles: LazyFile[]
   sessionMeta: SessionMeta[]
-  sources: Omit<SourceInfo, 'projectCount' | 'convIndexCount' | 'sessionMetaCount'>
-  /** 是否找到会话库（没有就只能靠标题缺失的项目 hash 分组） */
-  sessionsDbFound: boolean
-}
-
-interface Collected {
-  indexPath: string[]
-  handle: FileSystemFileHandle
+  sessionsDbName?: string
+  roots: { codebuddy: string[]; workbuddy: string[] }
+  scannedAt: string
+  elapsedMs: number
 }
 
 interface WalkState {
-  indexes: Collected[]
+  cbIndexes: Array<{ indexPath: string[]; handle: FileSystemFileHandle }>
+  wbFiles: Array<{ path: string[]; handle: FileSystemFileHandle }>
+  cbRoots: Set<string>
+  wbRoots: Set<string>
   sessionsDb?: FileSystemFileHandle
   visited: number
 }
@@ -63,25 +69,57 @@ function isHistoryIndex(path: string[]): boolean {
   return path.slice(0, -1).includes('history')
 }
 
+function isWorkbuddyJsonl(path: string[]): boolean {
+  const file = path[path.length - 1]
+  if (!file?.endsWith('.jsonl')) return false
+  return path.slice(0, -1).includes('projects')
+}
+
+function pushWorkbuddy(state: WalkState, path: string[], handle: FileSystemFileHandle) {
+  const idx = path.lastIndexOf('projects')
+  if (idx >= 0) state.wbRoots.add(path.slice(0, idx + 1).join('/') || 'projects')
+  state.wbFiles.push({ path, handle })
+}
+
 async function walk(dir: DirHandleLike, path: string[], state: WalkState, depth: number, onProgress?: Progress) {
   if (depth > MAX_DEPTH) return
   for await (const [name, entry] of dir.entries()) {
     if (entry.kind === 'directory') {
-      if (SKIP_DIRS.has(name) || name.startsWith('.')) continue
+      if (SKIP_DIRS.has(name) || name.startsWith('.') && name !== WB_ROOT) continue
+      if (name === WB_ROOT) {
+        // WorkBuddy 根：只认 projects，其余 900MB+ 一律不进
+        await walkWorkbuddyRoot(entry as unknown as DirHandleLike, [...path, name], state, depth + 1, onProgress)
+        continue
+      }
       await walk(entry as unknown as DirHandleLike, [...path, name], state, depth + 1, onProgress)
       continue
     }
     state.visited += 1
+    const filePath = [...path, name]
     if (name === SESSIONS_DB && !state.sessionsDb) {
       state.sessionsDb = entry as unknown as FileSystemFileHandle
     }
-    const filePath = [...path, name]
     if (isHistoryIndex(filePath)) {
-      state.indexes.push({ indexPath: filePath, handle: entry as unknown as FileSystemFileHandle })
+      state.cbIndexes.push({ indexPath: filePath, handle: entry as unknown as FileSystemFileHandle })
+      const idx = filePath.lastIndexOf('history')
+      if (idx >= 0) state.cbRoots.add(filePath.slice(0, idx + 1).join('/'))
+    }
+    if (isWorkbuddyJsonl(filePath)) {
+      pushWorkbuddy(state, filePath, entry as unknown as FileSystemFileHandle)
     }
     if (onProgress && state.visited % 400 === 0) {
-      onProgress('正在枚举目录…', state.indexes.length, undefined)
+      onProgress('正在枚举目录…', state.cbIndexes.length + state.wbFiles.length, undefined)
     }
+  }
+}
+
+/** 只遍历 .workbuddy/projects（含 <sessionId>/subagents/），其它子目录直接跳过 */
+async function walkWorkbuddyRoot(dir: DirHandleLike, path: string[], state: WalkState, depth: number, onProgress?: Progress) {
+  if (depth > MAX_DEPTH + 2) return
+  for await (const [name, entry] of dir.entries()) {
+    if (entry.kind !== 'directory' || name !== 'projects') continue
+    await walk(entry as unknown as DirHandleLike, [...path, name], state, depth + 1, onProgress)
+    return
   }
 }
 
@@ -94,7 +132,7 @@ export async function pickDirectory(remembered?: FileSystemDirectoryHandle | nul
     showDirectoryPicker?: (opts?: Record<string, unknown>) => Promise<FileSystemDirectoryHandle>
   }).showDirectoryPicker
   if (!picker) return null
-  const base: Record<string, unknown> = { id: 'codebuddy-data', mode: 'read' }
+  const base: Record<string, unknown> = { id: 'ai-usage-data', mode: 'read' }
   // startIn 只接受 handle 或已知目录名，浏览器会自己记住上次位置
   if (remembered) {
     try {
@@ -129,28 +167,47 @@ export async function ensurePermission(handle: FileSystemDirectoryHandle): Promi
   }
 }
 
-export async function scanDirectoryHandle(
-  root: FileSystemDirectoryHandle,
-  onProgress?: Progress,
-): Promise<ScanResult> {
-  const started = performance.now()
-  const state: WalkState = { indexes: [], visited: 0 }
-  // 带上根目录名：否则 buildDataset 推导出的 history 根只剩 "history"，
-  // 「数据体检」里的采集源会丢掉是哪一层目录扫出来的（拖拽通道本来就是这样）
-  await walk(root as unknown as DirHandleLike, [root.name], state, 0, onProgress)
+export function emptyScanResult(): ScanResult {
+  return {
+    cbFiles: [],
+    wbFiles: [],
+    sessionMeta: [],
+    roots: { codebuddy: [], workbuddy: [] },
+    scannedAt: new Date().toISOString(),
+    elapsedMs: 0,
+  }
+}
 
-  const files: ScannedFile[] = []
-  for (let i = 0; i < state.indexes.length; i++) {
-    const item = state.indexes[i]
+export async function scanDirectoryHandle(root: FileSystemDirectoryHandle, onProgress?: Progress): Promise<ScanResult> {
+  const started = performance.now()
+  const state: WalkState = { cbIndexes: [], wbFiles: [], cbRoots: new Set(), wbRoots: new Set(), visited: 0 }
+  // 带上根目录名：否则 buildDataset 推导出的 history 根只剩 "history"
+  const rootName = (root as unknown as DirHandleLike).name
+  if (rootName === WB_ROOT) {
+    await walkWorkbuddyRoot(root as unknown as DirHandleLike, [rootName], state, 0, onProgress)
+  } else {
+    await walk(root as unknown as DirHandleLike, [rootName], state, 0, onProgress)
+  }
+
+  const cbFiles: ScannedFile[] = []
+  for (let i = 0; i < state.cbIndexes.length; i++) {
+    const item = state.cbIndexes[i]
     try {
       const file = await item.handle.getFile()
-      const text = await file.text()
-      files.push({ path: item.indexPath, text })
+      cbFiles.push({ path: item.indexPath, text: await file.text() })
     } catch {
-      files.push({ path: item.indexPath, text: '' })
+      cbFiles.push({ path: item.indexPath, text: '' })
     }
-    if (onProgress && i % 20 === 0) onProgress('正在读取会话索引…', i + 1, state.indexes.length)
+    if (onProgress && i % 20 === 0) onProgress('正在读取会话索引…', i + 1, state.cbIndexes.length)
   }
+
+  const wbFiles: LazyFile[] = state.wbFiles.map((item) => ({
+    path: item.path,
+    read: async () => {
+      const file = await item.handle.getFile()
+      return file.text()
+    },
+  }))
 
   let sessionMeta: SessionMeta[] = []
   let sessionsDbName: string | undefined
@@ -165,29 +222,28 @@ export async function scanDirectoryHandle(
     }
   }
 
-  const now = new Date().toISOString()
   return {
-    files,
+    cbFiles,
+    wbFiles,
     sessionMeta,
-    sessionsDbFound: Boolean(sessionsDbName),
-    sources: {
-      historyRoots: [],
-      sessionsDb: sessionsDbName,
-      scannedAt: now,
-      elapsedMs: Math.round(performance.now() - started),
-    },
+    sessionsDbName,
+    roots: { codebuddy: [...state.cbRoots].sort(), workbuddy: [...state.wbRoots].sort() },
+    scannedAt: new Date().toISOString(),
+    elapsedMs: Math.round(performance.now() - started),
   }
 }
 
 /** `<input webkitdirectory>` 兜底路径：支持 file:// 打开或浏览器不支持目录选择器时 */
 export async function scanFileList(list: FileList, onProgress?: Progress): Promise<ScanResult & { rootName: string }> {
   const started = performance.now()
-  const files: ScannedFile[] = []
+  const cbFiles: ScannedFile[] = []
+  const wbFiles: LazyFile[] = []
+  const cbRoots = new Set<string>()
+  const wbRoots = new Set<string>()
   let sessionsDbFile: File | undefined
   let rootName = ''
 
-  const all = Array.from(list)
-  for (const file of all) {
+  for (const file of Array.from(list)) {
     const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
     const segments = rel.split('/')
     if (!rootName) rootName = segments[0]
@@ -196,14 +252,22 @@ export async function scanFileList(list: FileList, onProgress?: Progress): Promi
       continue
     }
     if (isHistoryIndex(segments)) {
+      const idx = segments.lastIndexOf('history')
+      if (idx >= 0) cbRoots.add(segments.slice(0, idx + 1).join('/'))
       try {
-        files.push({ path: segments, text: await file.text() })
+        cbFiles.push({ path: segments, text: await file.text() })
       } catch {
-        files.push({ path: segments, text: '' })
+        cbFiles.push({ path: segments, text: '' })
       }
+      continue
+    }
+    if (isWorkbuddyJsonl(segments)) {
+      const idx = segments.lastIndexOf('projects')
+      if (idx >= 0) wbRoots.add(segments.slice(0, idx + 1).join('/') || 'projects')
+      wbFiles.push({ path: segments, read: () => file.text() })
     }
   }
-  if (onProgress) onProgress('正在读取会话索引…', files.length, files.length)
+  if (onProgress) onProgress('正在读取会话索引…', cbFiles.length + wbFiles.length, cbFiles.length + wbFiles.length)
 
   let sessionMeta: SessionMeta[] = []
   let sessionsDbName: string | undefined
@@ -217,16 +281,14 @@ export async function scanFileList(list: FileList, onProgress?: Progress): Promi
   }
 
   return {
-    files,
+    cbFiles,
+    wbFiles,
     sessionMeta,
+    sessionsDbName,
     rootName,
-    sessionsDbFound: Boolean(sessionsDbName),
-    sources: {
-      historyRoots: [],
-      sessionsDb: sessionsDbName,
-      scannedAt: new Date().toISOString(),
-      elapsedMs: Math.round(performance.now() - started),
-    },
+    roots: { codebuddy: [...cbRoots].sort(), workbuddy: [...wbRoots].sort() },
+    scannedAt: new Date().toISOString(),
+    elapsedMs: Math.round(performance.now() - started),
   }
 }
 

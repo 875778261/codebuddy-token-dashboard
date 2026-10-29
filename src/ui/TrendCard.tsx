@@ -1,10 +1,11 @@
 import { useMemo } from 'react'
 import type { Aggregates } from '../core/aggregate'
 import { fmtInt, fmtPct, fmtTokens } from '../core/format'
+import { SOURCE_META, SOURCE_ORDER } from '../core/types'
 import type { Palette } from './theme'
 import { Chart } from './Chart'
 
-export type TrendMode = 'usage' | 'cache' | 'model'
+export type TrendMode = 'usage' | 'cache' | 'model' | 'source'
 
 const MODEL_LIMIT = 6
 
@@ -12,6 +13,7 @@ const MODES: Array<{ key: TrendMode; label: string }> = [
   { key: 'usage', label: 'Token 构成' },
   { key: 'cache', label: '缓存构成' },
   { key: 'model', label: '模型构成' },
+  { key: 'source', label: '端构成' },
 ]
 
 interface TipRow {
@@ -214,6 +216,35 @@ export function TrendCard({
       }
     }
 
+    if (mode === 'source') {
+      const sources = SOURCE_ORDER.filter((s) => days.some((d) => (d.bySource[s] ?? 0) > 0))
+      const colorOf = (s: (typeof SOURCE_ORDER)[number]) => (s === 'codebuddy' ? palette.models[0] : palette.models[1])
+      return {
+        grid,
+        xAxis,
+        yAxis: [valueAxis],
+        tooltip: axisTooltip('token'),
+        series: sources.map((s, i) => ({
+          name: SOURCE_META[s].label,
+          type: 'bar',
+          stack: 'src',
+          barMaxWidth: 26,
+          itemStyle: { color: colorOf(s), borderRadius: i === sources.length - 1 ? [3, 3, 0, 0] : 0 },
+          emphasis: { focus: 'series' },
+          data: days.map((d) => d.bySource[s] ?? 0),
+          ...(i === 0
+            ? {
+                markArea: {
+                  silent: true,
+                  itemStyle: { color: palette.dark ? 'rgba(255,255,255,.04)' : 'rgba(15,23,42,.04)' },
+                  data: gapAreas,
+                },
+              }
+            : {}),
+        })),
+      }
+    }
+
     const top = agg.modelDaily.slice(0, MODEL_LIMIT)
     const topKeys = new Set(top.map((m) => m.modelKey))
     const others = days.map((_, i) => agg.modelDaily.filter((m) => !topKeys.has(m.modelKey)).reduce((a, m) => a + (m.values[i] ?? 0), 0))
@@ -262,7 +293,12 @@ export function TrendCard({
             { label: '未命中', color: palette.miss },
             { label: '命中率', color: palette.credit },
           ]
-        : agg.modelDaily.slice(0, MODEL_LIMIT).map((m, i) => ({ label: m.modelKey, color: palette.models[i % palette.models.length] }))
+        : mode === 'source'
+          ? SOURCE_ORDER.filter((s) => agg.days.some((d) => (d.bySource[s] ?? 0) > 0)).map((s) => ({
+              label: SOURCE_META[s].label,
+              color: s === 'codebuddy' ? palette.models[0] : palette.models[1],
+            }))
+          : agg.modelDaily.slice(0, MODEL_LIMIT).map((m, i) => ({ label: m.modelKey, color: palette.models[i % palette.models.length] }))
 
   return (
     <section className="card">
@@ -274,7 +310,9 @@ export function TrendCard({
               ? 'Token 按 缓存／未命中／输出 三段堆叠，折线为积分'
               : mode === 'cache'
                 ? '输入 token 的缓存命中构成（按比例）与命中率'
-                : '每日 Token 的模型构成（按比例）'}
+                : mode === 'source'
+                  ? '每日 Token 按数据源堆叠：一眼看出什么时候换了工具'
+                  : '每日 Token 的模型构成（按比例）'}
           </div>
         </div>
         <div className="tools">
@@ -297,7 +335,7 @@ export function TrendCard({
             {l.label}
           </span>
         ))}
-        <span style={{ color: 'var(--ink-4)' }}>灰色区段 = 当日无记录</span>
+        <span style={{ color: 'var(--ink-4)' }}>灰色区段 = 当日无记录（不是数据缺口）</span>
       </div>
     </section>
   )

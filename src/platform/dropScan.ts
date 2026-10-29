@@ -1,4 +1,4 @@
-import type { ScannedFile } from '../core/parse'
+import type { LazyFile, ScannedFile } from '../core/parse'
 import { parseSessionsDb } from '../core/sessions'
 import type { SessionMeta } from '../core/types'
 
@@ -14,6 +14,7 @@ const SESSIONS_DB = 'codebuddy-sessions.vscdb'
 const MAX_DEPTH = 16
 const MAX_INDEX_FILES = 4000
 const READ_CONCURRENCY = 8
+const WB_ROOT = '.workbuddy'
 
 const SKIP_DIRS = new Set([
   'node_modules',
@@ -54,15 +55,17 @@ interface EntryLike {
 }
 
 export interface DropResult {
-  files: ScannedFile[]
+  cbFiles: ScannedFile[]
+  wbFiles: LazyFile[]
   sessionMeta: SessionMeta[]
   sessionsDbName?: string
   /** 拖进来的 .json（快照）文件，交给上层决定是否导入 */
   jsonFiles: File[]
   /** 拖进来的名字，用于提示 */
   roots: string[]
-  /** 命中的 history 根（相对拖入根），供"数据体检"展示 */
-  historyRoots: string[]
+  /** 命中的根（相对拖入根），供"数据体检"展示 */
+  historyRoots: { codebuddy: string[]; workbuddy: string[] }
+  scannedAt: string
   elapsedMs: number
 }
 
@@ -89,6 +92,7 @@ const fileOf = (entry: EntryLike) =>
   })
 
 const isHistoryIndex = (path: string[]) => path[path.length - 1] === 'index.json' && path.slice(0, -1).includes('history')
+const isWorkbuddyJsonl = (path: string[]) => Boolean(path[path.length - 1]?.endsWith('.jsonl')) && path.slice(0, -1).includes('projects')
 
 export function dropSupported(): boolean {
   return typeof DataTransferItem !== 'undefined' && 'webkitGetAsEntry' in DataTransferItem.prototype
@@ -132,8 +136,10 @@ export async function scanDrop(
   const started = performance.now()
   const roots: EntryLike[] = []
   const jsonFiles: File[] = []
-  const historyRoots = new Set<string>()
-  const pending: Array<{ path: string[]; file: File }> = []
+  const cbRoots = new Set<string>()
+  const wbRoots = new Set<string>()
+  const cbPending: Array<{ path: string[]; file: File }> = []
+  const wbPending: Array<{ path: string[]; file: File }> = []
   let dbFile: File | null = null
   let sessionsDbName: string | undefined
   let visited = 0
@@ -161,12 +167,13 @@ export async function scanDrop(
   }
 
   async function walk(entry: EntryLike, path: string[], depth: number) {
-    if (depth > MAX_DEPTH || pending.length >= MAX_INDEX_FILES) return
+    if (depth > MAX_DEPTH || cbPending.length + wbPending.length >= MAX_INDEX_FILES) return
     if (entry.isFile) {
       if (isHistoryIndex(path)) {
         const file = await fileOf(entry)
-        if (file) pending.push({ path, file })
-        historyRoots.add(path.slice(0, path.indexOf('history')).join('/') || '.')
+        if (file) cbPending.push({ path, file })
+        const idx = path.lastIndexOf('history')
+        if (idx >= 0) cbRoots.add(path.slice(0, idx + 1).join('/') || '.')
         return
       }
       if (entry.name === SESSIONS_DB && !dbFile) {
@@ -174,7 +181,17 @@ export async function scanDrop(
         sessionsDbName = entry.name
         return
       }
-      if (/\.json$/i.test(entry.name)) {
+      if (isWorkbuddyJsonl(path)) {
+        const file = await fileOf(entry)
+        if (file) {
+          wbPending.push({ path, file })
+          const idx = path.lastIndexOf('projects')
+          if (idx >= 0) wbRoots.add(path.slice(0, idx + 1).join('/') || 'projects')
+        }
+        return
+      }
+      // 快照候选：排除 WorkBuddy 的 <sessionId>.meta.json 之类噪音
+      if (/\.json$/i.test(entry.name) && !/\.meta\.json$/i.test(entry.name)) {
         const file = await fileOf(entry)
         if (file) jsonFiles.push(file)
       }
@@ -184,7 +201,11 @@ export async function scanDrop(
     const children = await readEntries(entry.createReader())
     for (const child of children) {
       if (child.isDirectory) {
-        if (SKIP_DIRS.has(child.name) || child.name.startsWith('.')) continue
+        if (SKIP_DIRS.has(child.name) || (child.name.startsWith('.') && child.name !== WB_ROOT)) continue
+        if (child.name === WB_ROOT) {
+          await walkWorkbuddyRoot(child, [...path, child.name], depth + 1)
+          continue
+        }
         await walk(child, [...path, child.name], depth + 1)
         continue
       }
@@ -196,32 +217,57 @@ export async function scanDrop(
         sessionsDbName = child.name
         continue
       }
-      if (!isHistoryIndex(childPath)) continue
-      const file = await fileOf(child)
-      if (file) {
-        pending.push({ path: childPath, file })
-        historyRoots.add(childPath.slice(0, childPath.indexOf('history')).join('/') || '.')
+      if (isHistoryIndex(childPath)) {
+        const file = await fileOf(child)
+        if (file) {
+          cbPending.push({ path: childPath, file })
+          const idx = childPath.lastIndexOf('history')
+          if (idx >= 0) cbRoots.add(childPath.slice(0, idx + 1).join('/') || '.')
+        }
+        continue
+      }
+      if (isWorkbuddyJsonl(childPath)) {
+        const file = await fileOf(child)
+        if (file) {
+          wbPending.push({ path: childPath, file })
+          const idx = childPath.lastIndexOf('projects')
+          if (idx >= 0) wbRoots.add(childPath.slice(0, idx + 1).join('/') || 'projects')
+        }
       }
     }
   }
 
-  for (const root of roots) await walk(root, [root.name], 0)
+  /** .workbuddy 根只走 projects，避免扫进 app/plugins/workspace（900MB+） */
+  async function walkWorkbuddyRoot(entry: EntryLike, path: string[], depth: number) {
+    if (!entry.createReader) return
+    const children = await readEntries(entry.createReader())
+    for (const child of children) {
+      if (!child.isDirectory || child.name !== 'projects') continue
+      await walk(child, [...path, child.name], depth + 1)
+      return
+    }
+  }
 
-  // 索引文件铺开读，8 路并发；顺序读 220 个大 JSON 会拖到 4s+
-  const files: ScannedFile[] = new Array(pending.length)
+  for (const root of roots) {
+    if (root.isDirectory && root.name === WB_ROOT) await walkWorkbuddyRoot(root, [root.name], 0)
+    else await walk(root, [root.name], 0)
+  }
+
+  // CodeBuddy 索引铺开读，8 路并发；WorkBuddy 保持惰性，交给解析器逐个读
+  const cbFiles: ScannedFile[] = new Array(cbPending.length)
   let cursor = 0
   let done = 0
-  const workers = Array.from({ length: Math.min(READ_CONCURRENCY, pending.length || 1) }, async () => {
-    while (cursor < pending.length) {
+  const workers = Array.from({ length: Math.min(READ_CONCURRENCY, cbPending.length || 1) }, async () => {
+    while (cursor < cbPending.length) {
       const idx = cursor++
-      const item = pending[idx]
+      const item = cbPending[idx]
       try {
-        files[idx] = { path: item.path, text: await item.file.text() }
+        cbFiles[idx] = { path: item.path, text: await item.file.text() }
       } catch {
-        files[idx] = { path: item.path, text: '' }
+        cbFiles[idx] = { path: item.path, text: '' }
       }
       done += 1
-      if (done % 20 === 0) onProgress?.('正在读取会话索引…', done, pending.length)
+      if (done % 20 === 0) onProgress?.('正在读取会话索引…', done, cbPending.length)
     }
   })
   await Promise.all(workers)
@@ -235,14 +281,16 @@ export async function scanDrop(
     }
   }
 
-  onProgress?.('读取完成', files.length, files.length)
+  onProgress?.('读取完成', cbFiles.length + wbPending.length, cbFiles.length + wbPending.length)
   return {
-    files,
+    cbFiles,
+    wbFiles: wbPending.map((item) => ({ path: item.path, read: () => item.file.text() })),
     sessionMeta,
     sessionsDbName,
     jsonFiles,
     roots: roots.map((r) => r.name),
-    historyRoots: [...historyRoots],
+    historyRoots: { codebuddy: [...cbRoots].sort(), workbuddy: [...wbRoots].sort() },
+    scannedAt: new Date().toISOString(),
     elapsedMs: Math.round(performance.now() - started),
   }
 }

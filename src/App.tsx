@@ -1,11 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { aggregate, makeCustomWindow, makeWindow, type WindowPreset } from './core/aggregate'
+import { aggregatesBySource, makeCustomWindow, makeWindow, type WindowPreset } from './core/aggregate'
 import { buildDemoDataset } from './core/demo'
 import { fmtInt, fmtTokens } from './core/format'
-import { applySessionMeta, buildDataset, type ScannedFile } from './core/parse'
+import { applySessionMeta, buildDataset } from './core/parse'
+import { mergeSlices, splitBySource } from './core/merge'
+import { parseWorkbuddy } from './core/workbuddyParse'
 import { parseSnapshot, serializeDataset, snapshotFileName } from './core/snapshot'
-import type { Dataset, SessionMeta, SourceInfo } from './core/types'
-import { scanDirectoryHandle, scanFileList, ensurePermission, pickDirectory, pickSessionsDb, supportsDirectoryPicker } from './platform/browserScan'
+import { SOURCE_META, SOURCE_ORDER, type Dataset, type SourceId } from './core/types'
+import {
+  ensurePermission,
+  pickDirectory,
+  pickSessionsDb,
+  scanDirectoryHandle,
+  scanFileList,
+  supportsDirectoryPicker,
+  type ScanResult,
+} from './platform/browserScan'
 import { captureHandles, firstDirectoryHandle, scanDrop } from './platform/dropScan'
 import { idbDel, idbGet, idbSet, prefs } from './platform/idb'
 import { getPalette } from './ui/theme'
@@ -18,9 +28,11 @@ import { ProjectCard } from './ui/ProjectCard'
 import { SessionCard } from './ui/SessionCard'
 import { DistCard } from './ui/DistCard'
 import { HealthCard } from './ui/HealthCard'
+import { SourceCompareCard } from './ui/SourceCompareCard'
 
 type Status = { text: string; error?: boolean } | null
-type ScanSources = Omit<SourceInfo, 'projectCount' | 'convIndexCount' | 'sessionMetaCount'>
+type SliceMap = Partial<Record<SourceId, Dataset>>
+type DirMap = Partial<Record<SourceId, FileSystemDirectoryHandle>>
 
 const PRESETS: Array<{ key: WindowPreset; label: string }> = [
   { key: '7', label: '近 7 天' },
@@ -29,8 +41,10 @@ const PRESETS: Array<{ key: WindowPreset; label: string }> = [
   { key: 'all', label: '全部' },
 ]
 
+const dirKey = (source: SourceId) => `dir:${source}`
+
 export default function App() {
-  const [dataset, setDataset] = useState<Dataset | null>(null)
+  const [slices, setSlices] = useState<SliceMap | null>(null)
   const [theme, setTheme] = useState<'dark' | 'light'>(() => prefs.theme())
   const [preset, setPreset] = useState<WindowPreset>('30')
   const [custom, setCustom] = useState<{ from: string; to: string } | null>(null)
@@ -44,12 +58,13 @@ export default function App() {
   const [dragging, setDragging] = useState(false)
   const [modelFocus, setModelFocus] = useState<string | null>(null)
   const [auto, setAuto] = useState(() => prefs.autoRefresh())
-  /** 是否持有可复用的目录句柄（决定「重扫」能不能真的刷新，ref 不能驱动 UI） */
-  const [hasDir, setHasDir] = useState(false)
+  /** 每个源各自持有目录句柄（ref 不能驱动 UI，所以另存一份可渲染状态） */
+  const [hasDir, setHasDir] = useState<Partial<Record<SourceId, boolean>>>({})
 
-  const dirRef = useRef<FileSystemDirectoryHandle | null>(null)
+  const dirRefs = useRef<DirMap>({})
+  const slicesRef = useRef<SliceMap | null>(null)
   const dragDepth = useRef(0)
-  const scanRef = useRef<{ files: ScannedFile[]; sessionMeta: SessionMeta[]; sources: ScanSources } | null>(null)
+  const scanRef = useRef<ScanResult | null>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const snapshotInputRef = useRef<HTMLInputElement>(null)
 
@@ -60,22 +75,42 @@ export default function App() {
     prefs.setTheme(theme)
   }, [theme])
 
-  // 恢复上次数据：重开页面不用再选目录
+  // 恢复上次数据：重开页面不用再选目录（键名从 dataset 升级为 slices，旧缓存自动迁移）
   useEffect(() => {
     let alive = true
     ;(async () => {
-      const saved = await idbGet<Dataset>('dataset')
-      if (alive && saved?.isDemo) {
-        // 旧版本曾把示例数据写进缓存，这里顺手清掉，避免"示例"冒充真实数据
-        void idbDel('dataset')
-      } else if (alive && saved && Array.isArray(saved.sessions) && saved.sessions.length) {
-        setDataset(saved)
-        setRestored(true)
+      const saved = await idbGet<SliceMap>('slices')
+      if (alive && saved && Object.keys(saved).length) {
+        const hasDemo = Object.values(saved).some((d) => d?.isDemo)
+        if (hasDemo) {
+          void idbDel('slices')
+        } else {
+          slicesRef.current = saved
+          setSlices(saved)
+          setRestored(true)
+        }
+      } else if (alive) {
+        const legacy = await idbGet<Dataset>('dataset')
+        if (legacy?.isDemo) {
+          void idbDel('dataset')
+        } else if (legacy?.sessions?.length) {
+          const split = splitBySource(legacy)
+          slicesRef.current = split
+          setSlices(split)
+          setRestored(true)
+        }
       }
-      const handle = await idbGet<FileSystemDirectoryHandle>('dir')
-      if (alive && handle) {
-        dirRef.current = handle
-        setHasDir(true)
+
+      const cb = await idbGet<FileSystemDirectoryHandle>(dirKey('codebuddy'))
+      const wb = await idbGet<FileSystemDirectoryHandle>(dirKey('workbuddy'))
+      // 旧版本只有一个 dir 键，且只服务 CodeBuddy
+      const legacyDir = await idbGet<FileSystemDirectoryHandle>('dir')
+      if (alive) {
+        const dirs: DirMap = {}
+        if (cb ?? legacyDir) dirs.codebuddy = cb ?? legacyDir ?? undefined
+        if (wb) dirs.workbuddy = wb
+        dirRefs.current = dirs
+        setHasDir({ codebuddy: Boolean(dirs.codebuddy), workbuddy: Boolean(dirs.workbuddy) })
       }
     })()
     return () => {
@@ -83,26 +118,47 @@ export default function App() {
     }
   }, [])
 
+  const dataset = useMemo<Dataset | null>(() => {
+    if (!slices) return null
+    const list = SOURCE_ORDER.map((s) => slices[s]).filter((d): d is Dataset => Boolean(d))
+    if (!list.length) return null
+    return mergeSlices(list)
+  }, [slices])
+
   const win = useMemo(
     () => (custom ? makeCustomWindow(custom.from, custom.to) : makeWindow(preset, dataset?.coverage.first)),
     [custom, preset, dataset],
   )
 
-  const agg = useMemo(() => (dataset ? aggregate(dataset, win) : null), [dataset, win])
+  const aggPair = useMemo(() => (dataset ? aggregatesBySource(dataset, win) : null), [dataset, win])
+  const agg = aggPair?.merged ?? null
+  const bySourceAgg = aggPair?.bySource ?? {}
 
-  const persist = useCallback((ds: Dataset) => {
-    setDataset(ds)
+  const persist = useCallback((next: SliceMap | null) => {
+    slicesRef.current = next
+    setSlices(next)
     setRestored(false)
+    if (!next || !Object.keys(next).length) {
+      void idbDel('slices')
+      return
+    }
     // 示例数据只在内存里预览：绝不覆盖真实缓存
-    if (ds.isDemo) return
-    idbSet('dataset', ds)
+    if (Object.values(next).some((d) => d?.isDemo)) return
+    void idbSet('slices', next)
+  }, [])
+
+  const registerHandle = useCallback((source: SourceId, dir: FileSystemDirectoryHandle | null) => {
+    if (!dir) return
+    dirRefs.current = { ...dirRefs.current, [source]: dir }
+    setHasDir((prev) => ({ ...prev, [source]: true }))
+    void idbSet(dirKey(source), dir)
   }, [])
 
   const handleReset = useCallback(() => {
     scanRef.current = null
-    dirRef.current = null
-    setHasDir(false)
-    setDataset(null)
+    dirRefs.current = {}
+    persist(null)
+    setHasDir({})
     setRestored(false)
     setModelFocus(null)
     setStatus(null)
@@ -110,30 +166,81 @@ export default function App() {
     setFromDate('')
     setToDate('')
     setPreset('30')
+    for (const source of SOURCE_ORDER) void idbDel(dirKey(source))
+    void idbDel('slices')
     void idbDel('dataset')
     void idbDel('dir')
-  }, [])
+  }, [persist])
 
-  const rebuild = useCallback(
-    (files: ScannedFile[], sessionMeta: SessionMeta[], sources: ScanSources) => {
+  /** 一次扫描结果 → 逐源切片，未命中的源保持原样（先 CB 后 WB 不必重扫） */
+  const ingest = useCallback(
+    async (res: ScanResult) => {
+      const base = slicesRef.current ?? {}
+      const next: SliceMap = { ...base }
+      const changed: SourceId[] = []
+      const notes: string[] = []
       const t0 = performance.now()
-      const ds = buildDataset({ files, sessionMeta, sources, elapsedMs: Math.round((sources.elapsedMs ?? 0) + (performance.now() - t0)) })
-      if (!ds.sessions.length) {
-        setStatus({ text: '在所选目录里没有找到带 usage 的请求记录（history/**/index.json）。请确认选到 CodeBuddyExtension\\Data 或其上层目录。', error: true })
+
+      if (res.cbFiles.length) {
+        const ds = buildDataset({
+          files: res.cbFiles,
+          sessionMeta: res.sessionMeta,
+          sources: {
+            historyRoots: res.roots.codebuddy,
+            scannedAt: res.scannedAt,
+            sessionsDb: res.sessionsDbName,
+          },
+          elapsedMs: Math.round(performance.now() - t0),
+        })
+        if (ds.sessions.length) {
+          next.codebuddy = ds
+          changed.push('codebuddy')
+          notes.push(`CodeBuddy ${fmtInt(ds.selfCheck.requestsWithUsage)} 请求`)
+        }
+      } else if (res.sessionMeta.length && next.codebuddy) {
+        // 只补了会话库：不重算任何 token
+        next.codebuddy = applySessionMeta(next.codebuddy, res.sessionMeta, res.sessionsDbName)
+        changed.push('codebuddy')
+        notes.push(`CodeBuddy 会话库 ${fmtInt(res.sessionMeta.length)} 条`)
+      }
+
+      if (res.wbFiles.length) {
+        setStatus({ text: `正在解析 WorkBuddy ${fmtInt(res.wbFiles.length)} 个 jsonl…` })
+        const wb = await parseWorkbuddy(res.wbFiles, {
+          sources: { historyRoots: res.roots.workbuddy, scannedAt: res.scannedAt },
+          elapsedMs: Math.round(performance.now() - t0),
+          onProgress: (done, total) => setStatus({ text: `正在解析 WorkBuddy 记录 ${done}/${total} 个文件…` }),
+        })
+        if (wb.sessions.length) {
+          next.workbuddy = wb
+          changed.push('workbuddy')
+          notes.push(`WorkBuddy ${fmtInt(wb.selfCheck.requestsWithUsage)} 请求`)
+        }
+      }
+
+      if (!changed.length) {
+        setStatus({
+          text:
+            '没有在所选内容里找到可用用量。CodeBuddy 请选 CodeBuddyExtension\\Data（history/**/index.json）；' +
+            'WorkBuddy 请选 ~/.workbuddy 或它的 projects 目录（projects/**/*.jsonl）。',
+          error: true,
+        })
         return
       }
-      setStatus(null)
-      persist(ds)
+
+      scanRef.current = res
+      persist(next)
+      setStatus({ text: `已载入 ${[...new Set(changed)].map((s) => SOURCE_META[s].label).join(' + ')}：${notes.join(' · ')}` })
     },
     [persist],
   )
 
-  const finishScan = useCallback(
-    (res: { files: ScannedFile[]; sessionMeta: SessionMeta[]; sources: ScanSources }) => {
-      scanRef.current = res
-      rebuild(res.files, res.sessionMeta, res.sources)
+  const applyScanHandles = useCallback(
+    (res: ScanResult, dir: FileSystemDirectoryHandle | null) => {
+      if (res.cbFiles.length) registerHandle('codebuddy', dir)
+      if (res.wbFiles.length) registerHandle('workbuddy', dir)
     },
-    [rebuild],
+    [registerHandle],
   )
 
   const handlePickDirectory = useCallback(async () => {
@@ -145,27 +252,29 @@ export default function App() {
     setStatus({ text: '等待选择目录…' })
     // 选择器被系统目录拦下时 Promise 不会立刻 reject，这里给一句救援提示
     const rescue = window.setTimeout(() => {
-      setStatus({ text: '如果浏览器提示「此文件夹包含系统文件」，说明 AppData 被拦住：关掉对话框，直接把 Data 文件夹拖进窗口即可。' })
+      setStatus({
+        text:
+          '如果浏览器提示「此文件夹包含系统文件」，说明 AppData 被拦住：关掉对话框，直接把 Data 文件夹拖进窗口即可。' +
+          'WorkBuddy 的 ~/.workbuddy 通常可以直接选。',
+      })
     }, 12_000)
     try {
-      const dir = await pickDirectory(dirRef.current)
+      const dir = await pickDirectory(dirRefs.current.codebuddy ?? dirRefs.current.workbuddy ?? null)
       if (!dir) {
         setBusy(false)
         setStatus(null)
         return
       }
-      dirRef.current = dir
-      setHasDir(true)
-      idbSet('dir', dir)
       const res = await scanDirectoryHandle(dir, (stage, done, total) =>
         setStatus({ text: total ? `${stage} ${done}/${total}` : `${stage} ${done}` }),
       )
-      finishScan(res)
+      applyScanHandles(res, dir)
+      await ingest(res)
     } catch (err) {
       const name = (err as DOMException)?.name
       if (name === 'SecurityError' || name === 'NotAllowedError') {
         // file:// 打开或权限策略限制时，目录 API 不可用 → 回落到 <input webkitdirectory>
-        setStatus({ text: '当前环境不支持目录选择，已切换为「选择文件夹」文件框（目录里的 usage 一样只在本地解析）。' })
+        setStatus({ text: '当前环境不支持目录选择，已切换为「选择文件夹」文件框（数据一样只在本地解析）。' })
         folderInputRef.current?.click()
       } else {
         setStatus({ text: `扫描失败：${(err as Error)?.message ?? err}`, error: true })
@@ -174,37 +283,42 @@ export default function App() {
       window.clearTimeout(rescue)
       setBusy(false)
     }
-  }, [finishScan])
+  }, [applyScanHandles, ingest])
 
-  const handleRescan = useCallback(async () => {
-    const dir = dirRef.current
-    if (!dir) {
-      // 快照导入 / 文件夹文件框进来的数据没有目录句柄，浏览器不会替我们记住路径：
-      // 这里必须明说下一步怎么做，否则按钮看起来就是"点了没反应"
-      setStatus({
-        text: dataset?.isDemo
-          ? '示例数据没有真实路径，无法重扫。把 CodeBuddyExtension\\Data 文件夹拖进窗口，或点「重置」回初始页。'
-          : '当前数据没有可复用的目录句柄（来自快照导入或「文件夹」文件框）。刷新方式：把 Data 文件夹再拖进窗口，或点「目录」重选。',
-      })
-      return
-    }
-    setBusy(true)
-    setStatus({ text: '重新扫描中…' })
-    try {
-      if (!(await ensurePermission(dir))) {
-        setBusy(false)
-        setHasDir(false)
-        setStatus({ text: '浏览器收回了上次目录的读取权限，点「目录」重新选一次即可恢复一键重扫。', error: true })
+  const handleRescan = useCallback(
+    async (only?: SourceId) => {
+      const targets = (only ? [only] : SOURCE_ORDER).filter((s) => dirRefs.current[s])
+      if (!targets.length) {
+        setStatus({
+          text: dataset?.isDemo
+            ? '示例数据没有真实路径，无法重扫。把 Data 或 ~/.workbuddy 文件夹拖进窗口，或点「重置」回初始页。'
+            : '当前数据没有可复用的目录句柄（来自快照导入或「文件夹」文件框）。刷新方式：把目录再拖进窗口，或点「目录」重选。',
+        })
         return
       }
-      const res = await scanDirectoryHandle(dir, (stage, done, total) => setStatus({ text: total ? `${stage} ${done}/${total}` : stage }))
-      finishScan(res)
-    } catch (err) {
-      setStatus({ text: `重新扫描失败：${(err as Error)?.message ?? err}`, error: true })
-    } finally {
-      setBusy(false)
-    }
-  }, [finishScan, dataset])
+      setBusy(true)
+      try {
+        for (const source of targets) {
+          const dir = dirRefs.current[source]!
+          if (!(await ensurePermission(dir))) {
+            setHasDir((prev) => ({ ...prev, [source]: false }))
+            setStatus({ text: `${SOURCE_META[source].label} 的目录权限被浏览器收回，点「目录」重新选一次即可恢复一键重扫。`, error: true })
+            continue
+          }
+          setStatus({ text: `正在重扫 ${SOURCE_META[source].label}…` })
+          const res = await scanDirectoryHandle(dir, (stage, done, total) =>
+            setStatus({ text: `${SOURCE_META[source].label} · ${total ? `${stage} ${done}/${total}` : stage}` }),
+          )
+          await ingest(res)
+        }
+      } catch (err) {
+        setStatus({ text: `重新扫描失败：${(err as Error)?.message ?? err}`, error: true })
+      } finally {
+        setBusy(false)
+      }
+    },
+    [dataset, ingest],
+  )
 
   const handleFolderInput = useCallback(
     async (list: FileList | null) => {
@@ -213,14 +327,14 @@ export default function App() {
       setStatus({ text: '正在读取所选文件夹…' })
       try {
         const res = await scanFileList(list)
-        finishScan(res)
+        await ingest(res)
       } catch (err) {
         setStatus({ text: `读取失败：${(err as Error)?.message ?? err}`, error: true })
       } finally {
         setBusy(false)
       }
     },
-    [finishScan],
+    [ingest],
   )
 
   const handleAddSessionsDb = useCallback(async () => {
@@ -231,70 +345,58 @@ export default function App() {
         setStatus(null)
         return
       }
-      const base = scanRef.current
-      if (!base) {
-        if (dataset) {
-          persist(applySessionMeta(dataset, picked.sessionMeta, picked.name))
-          setStatus(null)
-          return
-        }
-        setStatus({ text: '请先扫描一次数据目录，再补充会话库。', error: true })
+      const current = slicesRef.current
+      if (!current?.codebuddy) {
+        setStatus({ text: '请先扫描一次 CodeBuddy 数据目录，再补充会话库。', error: true })
         return
       }
-      finishScan({ ...base, sessionMeta: picked.sessionMeta, sources: { ...base.sources, sessionsDb: picked.name } })
+      persist({ ...current, codebuddy: applySessionMeta(current.codebuddy, picked.sessionMeta, picked.name) })
+      setStatus({ text: `已补入 CodeBuddy 会话库 ${fmtInt(picked.sessionMeta.length)} 条` })
     } catch (err) {
       setStatus({ text: `读取会话库失败：${(err as Error)?.message ?? err}`, error: true })
     }
-  }, [finishScan, dataset, persist])
+  }, [persist])
 
   const handleDrop = useCallback(
     async (dt: DataTransfer, handles: Array<Promise<FileSystemHandle | null>> = []) => {
-      // 顺手把拖入目录的句柄存下来，之后「重扫 / 自动刷新」才有得可用
-      void firstDirectoryHandle(handles).then((dir) => {
-        if (!dir) return
-        dirRef.current = dir
-        setHasDir(true)
-        idbSet('dir', dir)
-      })
+      // 句柄必须在 drop 的同步阶段取，事件结束后 items 会失效
+      const handlePromise = firstDirectoryHandle(handles)
       setBusy(true)
       setStatus({ text: '正在读取拖入的内容…' })
       try {
         const res = await scanDrop(dt, (stage, done) => setStatus({ text: `${stage} ${done}` }))
 
         // 只拖了一个快照 JSON
-        if (!res.files.length && res.jsonFiles.length) {
+        if (!res.cbFiles.length && !res.wbFiles.length && !res.sessionMeta.length && res.jsonFiles.length) {
           const ds = parseSnapshot(await res.jsonFiles[0].text())
-          scanRef.current = null
-          persist(ds)
-          setStatus(null)
+          const split = splitBySource(ds)
+          persist({ ...(slicesRef.current ?? {}), ...split })
+          setStatus({ text: `已导入快照：${Object.keys(split).map((s) => SOURCE_META[s as SourceId].label).join(' + ')}` })
           return
         }
 
-        if (res.files.length) {
-          finishScan({
-            files: res.files,
+        if (res.cbFiles.length || res.wbFiles.length) {
+          const scan: ScanResult = {
+            cbFiles: res.cbFiles,
+            wbFiles: res.wbFiles,
             sessionMeta: res.sessionMeta,
-            sources: {
-              historyRoots: res.historyRoots.length ? res.historyRoots : res.roots,
-              sessionsDb: res.sessionsDbName,
-              scannedAt: new Date().toISOString(),
-              elapsedMs: res.elapsedMs,
-            },
-          })
+            sessionsDbName: res.sessionsDbName,
+            roots: res.historyRoots,
+            scannedAt: res.scannedAt,
+            elapsedMs: res.elapsedMs,
+          }
+          const dir = await handlePromise
+          applyScanHandles(scan, dir)
+          await ingest(scan)
           return
         }
 
         // 只拖了 codebuddy-sessions.vscdb
         if (res.sessionMeta.length) {
-          if (scanRef.current) {
-            finishScan({
-              ...scanRef.current,
-              sessionMeta: res.sessionMeta,
-              sources: { ...scanRef.current.sources, sessionsDb: res.sessionsDbName },
-            })
-          } else if (dataset) {
-            persist(applySessionMeta(dataset, res.sessionMeta, res.sessionsDbName))
-            setStatus(null)
+          const current = slicesRef.current
+          if (current?.codebuddy) {
+            persist({ ...current, codebuddy: applySessionMeta(current.codebuddy, res.sessionMeta, res.sessionsDbName) })
+            setStatus({ text: `已补入 CodeBuddy 会话库 ${fmtInt(res.sessionMeta.length)} 条` })
           } else {
             setStatus({ text: '只读到了会话库：还需要把 CodeBuddyExtension\\Data 目录一起拖进来才能看到用量。', error: true })
           }
@@ -302,7 +404,9 @@ export default function App() {
         }
 
         setStatus({
-          text: '没有在拖入的内容里找到 history/**/index.json 或 codebuddy-sessions.vscdb。确认拖的是 CodeBuddyExtension\\Data 这个文件夹本身。',
+          text:
+            '没有在拖入的内容里找到用量。支持：CodeBuddyExtension\\Data（history/**/index.json）、' +
+            '~/.workbuddy 或 projects（projects/**/*.jsonl）、codebuddy-sessions.vscdb、快照 JSON。',
           error: true,
         })
       } catch (err) {
@@ -311,7 +415,7 @@ export default function App() {
         setBusy(false)
       }
     },
-    [dataset, finishScan, persist],
+    [applyScanHandles, ingest, persist],
   )
 
   // 拖拽：浏览器拒绝打开 AppData 这类系统目录，但拖拽读取不受限制
@@ -337,7 +441,6 @@ export default function App() {
       e.preventDefault()
       dragDepth.current = 0
       setDragging(false)
-      // 句柄必须在 drop 的同步阶段取，事件结束后 items 会失效
       const handles = captureHandles(e.dataTransfer)
       void handleDrop(e.dataTransfer, handles)
     }
@@ -353,18 +456,21 @@ export default function App() {
     }
   }, [handleDrop])
 
-  const handleImportSnapshot = useCallback(async (file: File | null) => {
-    if (!file) return
-    try {
-      const ds = parseSnapshot(await file.text())
-      if (!ds.sessions.length) throw new Error('快照里没有会话')
-      scanRef.current = null
-      persist(ds)
-      setStatus(null)
-    } catch (err) {
-      setStatus({ text: `导入失败：${(err as Error)?.message ?? err}`, error: true })
-    }
-  }, [persist])
+  const handleImportSnapshot = useCallback(
+    async (file: File | null) => {
+      if (!file) return
+      try {
+        const ds = parseSnapshot(await file.text())
+        if (!ds.sessions.length) throw new Error('快照里没有会话')
+        const split = splitBySource(ds)
+        persist({ ...(slicesRef.current ?? {}), ...split })
+        setStatus({ text: `已导入快照：${Object.keys(split).map((s) => SOURCE_META[s as SourceId].label).join(' + ')}` })
+      } catch (err) {
+        setStatus({ text: `导入失败：${(err as Error)?.message ?? err}`, error: true })
+      }
+    },
+    [persist],
+  )
 
   const handleExport = useCallback(() => {
     if (!dataset) return
@@ -372,32 +478,34 @@ export default function App() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = snapshotFileName()
+    a.download = snapshotFileName(new Date(), Object.keys(dataset.bySource) as SourceId[])
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 4000)
   }, [dataset])
 
   const handleDemo = useCallback(() => {
     scanRef.current = null
-    persist(buildDemoDataset())
+    persist(splitBySource(buildDemoDataset()))
   }, [persist])
 
-  // 自动刷新：仅在仍持有目录权限时静默重扫
+  // 自动刷新：仅在仍持有目录权限时静默重扫，逐源进行
   useEffect(() => {
     prefs.setAutoRefresh(auto)
     if (!auto || !dataset) return
     const timer = window.setInterval(async () => {
-      const dir = dirRef.current
-      if (!dir || !(await ensurePermission(dir))) return
-      try {
-        const res = await scanDirectoryHandle(dir)
-        finishScan(res)
-      } catch {
-        /* 静默失败，不打扰 */
+      for (const source of SOURCE_ORDER) {
+        const dir = dirRefs.current[source]
+        if (!dir || !(await ensurePermission(dir))) continue
+        try {
+          const res = await scanDirectoryHandle(dir)
+          await ingest(res)
+        } catch {
+          /* 静默失败，不打扰 */
+        }
       }
     }, 5 * 60 * 1000)
     return () => window.clearInterval(timer)
-  }, [auto, dataset, finishScan])
+  }, [auto, dataset, ingest])
 
   useEffect(() => {
     setModelFocus(null)
@@ -419,18 +527,21 @@ export default function App() {
     else if (!nextFrom && !nextTo) setCustom(null)
   }
 
+  const loadedSources = dataset ? (Object.keys(dataset.bySource) as SourceId[]) : []
+  const canRescan = SOURCE_ORDER.some((s) => hasDir[s])
+
   return (
     <>
       <div className="shell">
         <header className="topbar">
           <div className="brand">
-            <div className="brand-mark">CB</div>
+            <div className="brand-mark">AI</div>
             <div className="brand-text">
-              <h1>CodeBuddy 用量看板</h1>
+              <h1>本机 AI 用量看板</h1>
               <div className="meta">
                 {dataset && agg
-                  ? `${dataset.sources.sessionsDb ? 'history + 会话库' : 'history'} · ${fmtInt(agg.totals.requests)} 请求 · ${fmtTokens(agg.totals.total)} token · 扫描 ${dataset.sources.elapsedMs} ms`
-                  : '纯前端 · 数据不出本机'}
+                  ? `${loadedSources.map((s) => SOURCE_META[s].label).join(' + ') || '无数据'} · ${fmtInt(agg.totals.requests)} 请求 · ${fmtTokens(agg.totals.total)} token · 扫描 ${dataset.sources.elapsedMs} ms`
+                  : 'CodeBuddy + WorkBuddy · 纯前端 · 数据不出本机'}
               </div>
             </div>
           </div>
@@ -483,13 +594,13 @@ export default function App() {
               <button
                 type="button"
                 className="btn ghost"
-                onClick={handleRescan}
+                onClick={() => void handleRescan()}
                 disabled={busy}
-                title={hasDir ? '按上次的目录重新扫描，读到最新用量' : '当前数据没有可复用的目录句柄：点一下会提示怎么刷新'}
+                title={canRescan ? '按上次的目录重新扫描，读到最新用量' : '当前数据没有可复用的目录句柄：点一下会提示怎么刷新'}
               >
                 {busy ? <span className="spin" /> : '↻'} 重扫
               </button>
-              <button type="button" className="btn ghost" onClick={handlePickDirectory} disabled={busy} title="更换数据目录">
+              <button type="button" className="btn ghost" onClick={() => void handlePickDirectory()} disabled={busy} title="选择或新增一个数据目录（自动识别 CodeBuddy / WorkBuddy）">
                 目录
               </button>
               <button type="button" className="btn ghost" onClick={handleExport} title="导出快照 JSON">
@@ -522,7 +633,7 @@ export default function App() {
 
         {!dataset || !agg ? (
           <Landing
-            onPickDirectory={handlePickDirectory}
+            onPickDirectory={() => void handlePickDirectory()}
             onPickFallback={() => folderInputRef.current?.click()}
             onImport={() => snapshotInputRef.current?.click()}
             onDemo={handleDemo}
@@ -534,7 +645,7 @@ export default function App() {
           <div className="stack">
             {dataset.isDemo ? (
               <div className="banner info">
-                当前是<b>示例数据</b>（合成的 64 天用量，不含任何真实路径），仅用于预览界面，不会写入本地缓存。
+                当前是<b>示例数据</b>（合成的双端用量，不含任何真实路径），仅用于预览界面，不会写入本地缓存。
                 <button type="button" className="btn" onClick={handleReset}>
                   退出示例
                 </button>
@@ -543,22 +654,22 @@ export default function App() {
 
             {restored && !dataset.isDemo ? (
               <div className="banner info">
-                {hasDir
-                  ? '已恢复上次扫描结果（缓存快照）。点「重新扫描」读取最新用量。'
-                  : '已恢复上次扫描结果（缓存快照）。这份数据没有可复用的目录句柄，想刷新请把 Data 文件夹再拖进窗口。'}
-                {hasDir ? (
-                  <button type="button" className="btn" onClick={handleRescan} disabled={busy}>
+                {canRescan
+                  ? '已恢复上次扫描结果（缓存快照）。点「重扫」读取最新用量。'
+                  : '已恢复上次扫描结果（缓存快照）。这份数据没有可复用的目录句柄，想刷新请把数据目录再拖进窗口。'}
+                {canRescan ? (
+                  <button type="button" className="btn" onClick={() => void handleRescan()} disabled={busy}>
                     {busy ? '扫描中…' : '重新扫描'}
                   </button>
                 ) : null}
               </div>
             ) : null}
 
-            {!dataset.sources.sessionsDb ? (
+            {slices?.codebuddy && !dataset.bySource.codebuddy?.info.sessionsDb ? (
               <div className="banner">
-                未提供 <code>codebuddy-sessions.vscdb</code>：标题与项目路径暂缺。把该文件从
+                未提供 <code>codebuddy-sessions.vscdb</code>：CodeBuddy 的标题与项目路径暂缺。把该文件从
                 <code>%APPDATA%\CodeBuddy CN\</code> <b>直接拖进窗口</b>即可补上（AppData 是系统目录，选择器打不开它）。
-                <button type="button" className="btn" onClick={handleAddSessionsDb}>
+                <button type="button" className="btn" onClick={() => void handleAddSessionsDb()}>
                   仍然尝试选择文件
                 </button>
               </div>
@@ -567,12 +678,12 @@ export default function App() {
             {status?.error ? <div className="banner" style={{ borderLeftColor: 'var(--danger)' }}>{status.text}</div> : null}
 
             {agg.requestCountInWindow === 0 ? (
-              <div className="banner">
-                当前时间窗口内没有请求记录。试试切换到「全部」，或把日期区间放宽。
-              </div>
+              <div className="banner">当前时间窗口内没有请求记录。试试切换到「全部」，或把日期区间放宽。</div>
             ) : null}
 
             <KpiRow agg={agg} />
+
+            <SourceCompareCard merged={agg} bySource={bySourceAgg} palette={palette} onAdd={() => void handlePickDirectory()} busy={busy} />
 
             <div className="grid two">
               <TrendCard agg={agg} palette={palette} mode={trendMode} onMode={setTrendMode} />
@@ -609,9 +720,10 @@ export default function App() {
             <div className="drop-icon">↓</div>
             <b>松手即读取</b>
             <span>
-              支持 <code>CodeBuddyExtension\Data</code> 文件夹、<code>codebuddy-sessions.vscdb</code>，或快照 JSON
+              支持 <code>CodeBuddyExtension\Data</code>、<code>~/.workbuddy</code>（或其 <code>projects</code>）、
+              <code>codebuddy-sessions.vscdb</code>，或快照 JSON
               <br />
-              全部在本地解析，不会离开这台机器
+              两端可以分两次拖：后拖的只更新自己那一端
             </span>
           </div>
         </div>
@@ -622,7 +734,6 @@ export default function App() {
           {dataset ? `窗口：${agg?.window.label} · ${dataset.coverage.first ?? '—'} → ${dataset.coverage.last ?? '—'}` : '等待选择数据目录'}
           {dataset?.generatedAt ? ` · 快照生成于 ${new Date(dataset.generatedAt).toLocaleString('zh-CN')}` : ''}
         </span>
-        {/* <span>纯前端 · 解析口径见 docs/codebuddy-ide-data-sources.md · 数据不上传</span> */}
       </footer>
 
       <input

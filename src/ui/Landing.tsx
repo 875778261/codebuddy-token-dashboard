@@ -5,6 +5,7 @@ const IS_FILE = typeof location !== 'undefined' && location.protocol === 'file:'
 
 const DATA_PATH = IS_WIN ? '%LOCALAPPDATA%\\CodeBuddyExtension\\Data' : '~/Library/Application Support/CodeBuddyExtension/Data'
 const DB_PATH = IS_WIN ? '%APPDATA%\\CodeBuddy CN\\codebuddy-sessions.vscdb' : '~/Library/Application Support/CodeBuddy CN/codebuddy-sessions.vscdb'
+const WB_PATH = IS_WIN ? '%USERPROFILE%\\.workbuddy' : '~/.workbuddy'
 
 function CopyPath({ value }: { value: string }) {
   const [done, setDone] = useState(false)
@@ -47,26 +48,32 @@ export function Landing({
   return (
     <div className="landing">
       <section className="hero">
-        <h2>CodeBuddy 用量，全部留在本机</h2>
+        <h2>本机 AI 用量总账，全部留在本机</h2>
         <p>
-          把 CodeBuddy 的数据目录<b>拖进窗口</b>（或选择它），浏览器会直接读取 <code>history</code> 里的请求级 <code>usage</code>，统计 Token、积分、缓存命中、项目与会话分布。
+          把 <b>CodeBuddy</b> 或 <b>WorkBuddy</b> 的数据目录<b>拖进窗口</b>（或选择它）。只给一端就看这一端；两端都给就合并成一份总账，并单独给出<b>端对比</b>。
+          浏览器直接读取请求级 <code>usage</code>，统计 Token、积分、缓存命中、项目与会话分布。
         </p>
         <p className="privacy">
           <b>解析与聚合只发生在你的浏览器里</b>，不上传、不离线缓存到任何服务器；关掉标签页就什么都没有。
         </p>
 
         <div className="pathbox">
-          <span className="label">数据目录</span>
+          <span className="label">CodeBuddy</span>
           <code>{DATA_PATH}</code>
           <CopyPath value={DATA_PATH} />
         </div>
         <div className="pathbox" style={{ marginTop: 6 }}>
-          <span className="label">会话库（可选）</span>
+          <span className="label">WorkBuddy</span>
+          <code>{WB_PATH}</code>
+          <CopyPath value={WB_PATH} />
+        </div>
+        <div className="pathbox" style={{ marginTop: 6 }}>
+          <span className="label">CodeBuddy 会话库（可选）</span>
           <code>{DB_PATH}</code>
           <CopyPath value={DB_PATH} />
         </div>
         <p style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 4 }}>
-          只要有数据目录就能看到全部用量；会话库用于补上标题与项目路径，拖进来或事后补充都行。
+          两端可以分两次拖：后拖的只更新自己那一端，不会重扫另一端。会话库只用于补 CodeBuddy 的标题与项目路径。
         </p>
 
         <div className="hero-actions">
@@ -95,6 +102,7 @@ export function Landing({
               <>
                 Chrome / Edge 会把 <code>AppData</code> 判定为系统目录，选择器直接拒绝（提示"此文件夹包含系统文件"）。<em>拖拽不受这个限制</em>：
                 把 <code>…\CodeBuddyExtension\Data</code> 拖到窗口任意位置即可；想要会话标题与项目路径，再把 <code>codebuddy-sessions.vscdb</code> 一起拖进来。
+                WorkBuddy 的 <code>~/.workbuddy</code> 一般可以直接选，也可以直接拖。
               </>
             )}
           </span>
@@ -134,11 +142,11 @@ export function Landing({
         </div>
         <div className="feature">
           <b>可携带快照</b>
-          <span>一键导出 JSON，换机、归档、离线分享都不丢。</span>
+          <span>一键导出 JSON（含两端来源），换机、归档、离线分享都不丢。</span>
         </div>
         <div className="feature">
           <b>自带数据体检</b>
-          <span>恒等式、在途请求、缺失天全部明示。</span>
+          <span>逐源恒等式、重复记录、跨源合计一致性全部明示。</span>
         </div>
       </div>
     </div>

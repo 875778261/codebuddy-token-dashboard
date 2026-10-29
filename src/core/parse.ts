@@ -12,6 +12,7 @@ import type {
   SourceInfo,
 } from './types'
 import { dayList, localDateKey } from './format'
+import { qualify, rawIdOf } from './ids'
 
 export interface ScannedFile {
   /** 相对扫描根的路径分段，例如 ['fdb…','CodeBuddyIDE','fdb…','history','0be5…','7f00…','index.json'] */
@@ -19,11 +20,39 @@ export interface ScannedFile {
   text: string
 }
 
+/** 惰性文件：WorkBuddy 单源就有 200MB+ 文本，绝不能一次性全读进内存 */
+export interface LazyFile {
+  path: string[]
+  read: () => Promise<string>
+}
+
 export interface ParseInput {
   files: ScannedFile[]
   sessionMeta?: SessionMeta[]
   sources: Omit<SourceInfo, 'projectCount' | 'convIndexCount' | 'sessionMetaCount' | 'elapsedMs'>
   elapsedMs: number
+}
+
+export function emptySelfCheck(): SelfCheck {
+  return {
+    projectIndexFiles: 0,
+    convIndexFiles: 0,
+    parseErrors: 0,
+    requestsTotal: 0,
+    requestsWithUsage: 0,
+    inFlightSkipped: 0,
+    inputEqCachePlusMiss: { ok: 0, fail: 0 },
+    totalEqInputPlusOutput: { ok: 0, fail: 0 },
+    sessionsWithoutRequests: 0,
+    sessionsUnknownModel: 0,
+    sessionsWithoutCwd: 0,
+    sessionsWithoutTitle: 0,
+    requestsWithoutCredit: 0,
+    duplicateRequests: 0,
+    usageZeroFallbacks: 0,
+    subAgentSessions: 0,
+    suspectedDuplicateProjects: 0,
+  }
 }
 
 const isoToMs = (v?: string): number | undefined => {
@@ -45,7 +74,7 @@ function pathParts(path: string[]) {
   return { projectId, conversationId: convId, historyIdx: -1 }
 }
 
-function emptyTotals(): SessionTotals {
+export function emptyTotals(): SessionTotals {
   return {
     requests: 0,
     total: 0,
@@ -60,7 +89,7 @@ function emptyTotals(): SessionTotals {
   }
 }
 
-function bump(totals: SessionTotals, r: RequestRecord) {
+export function bump(totals: SessionTotals, r: RequestRecord) {
   totals.requests += 1
   totals.total += r.total
   totals.input += r.input
@@ -73,22 +102,14 @@ function bump(totals: SessionTotals, r: RequestRecord) {
   if (r.ts > totals.lastTs) totals.lastTs = r.ts
 }
 
+export function totalsOf(requests: RequestRecord[]): SessionTotals {
+  const t = emptyTotals()
+  for (const r of requests) bump(t, r)
+  return t
+}
+
 export function buildDataset(input: ParseInput): Dataset {
-  const pair = (): CountPair => ({ ok: 0, fail: 0 })
-  const selfCheck: SelfCheck = {
-    projectIndexFiles: 0,
-    convIndexFiles: 0,
-    parseErrors: 0,
-    requestsTotal: 0,
-    requestsWithUsage: 0,
-    inFlightSkipped: 0,
-    inputEqCachePlusMiss: pair(),
-    totalEqInputPlusOutput: pair(),
-    sessionsWithoutRequests: 0,
-    sessionsUnknownModel: 0,
-    sessionsWithoutCwd: 0,
-    sessionsWithoutTitle: 0,
-  }
+  const selfCheck = emptySelfCheck()
 
   const projectMeta = new Map<string, NonNullable<ProjectIndexDoc['conversations']>[number]>()
   const convDocs: Array<{ projectId: string; conversationId: string; doc: ConvIndexDoc }> = []
@@ -153,6 +174,8 @@ export function buildDataset(input: ParseInput): Dataset {
       const cache = usage.cacheTokens ?? 0
       const cacheWrite = usage.cachedWriteTokens ?? 0
       const cacheMiss = usage.cachedMissTokens ?? 0
+      const creditKnown = usage.credit !== undefined && usage.credit !== null
+      if (!creditKnown) selfCheck.requestsWithoutCredit += 1
 
       // 实测 674/674：input == cache + miss（本机 cacheWrite 恒为 0）。
       // 兼容未来出现 cacheWrite 的形态：两种口径任一成立即视为一致。
@@ -175,6 +198,7 @@ export function buildDataset(input: ParseInput): Dataset {
         cacheMiss,
         credit: usage.credit ?? 0,
         lastTokens: usage.lastTokens ?? 0,
+        creditKnown,
       })
     }
 
@@ -186,11 +210,12 @@ export function buildDataset(input: ParseInput): Dataset {
 
     const convMeta = projectMeta.get(conversationId)
     const dbMeta = metaById.get(conversationId)
-    const totals = emptyTotals()
-    for (const r of requests) bump(totals, r)
+    const totals = totalsOf(requests)
 
     const session: SessionRecord = {
-      id: conversationId,
+      id: qualify('codebuddy', conversationId),
+      rawId: conversationId,
+      source: 'codebuddy',
       projectId,
       type: convMeta?.type ?? requests[0].type,
       chatMode: convMeta?.chatMode,
@@ -209,11 +234,9 @@ export function buildDataset(input: ParseInput): Dataset {
 
     // 同一 conversationId 可能出现在多个历史根（换机/换账号），合并而不是覆盖
     if (seen.has(conversationId)) {
-      const prev = sessions.find((s) => s.id === conversationId)!
+      const prev = sessions.find((s) => s.rawId === conversationId)!
       prev.requests = [...prev.requests, ...requests].sort((a, b) => a.ts - b.ts)
-      const merged = emptyTotals()
-      for (const r of prev.requests) bump(merged, r)
-      prev.totals = merged
+      prev.totals = totalsOf(prev.requests)
       prev.cwd = prev.cwd ?? session.cwd
       prev.title = prev.title ?? session.title
       prev.modelId = prev.modelId ?? session.modelId
@@ -237,9 +260,10 @@ export function buildDataset(input: ParseInput): Dataset {
   }
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: new Date().toISOString(),
     sources: sourceInfo,
+    bySource: { codebuddy: { info: sourceInfo, selfCheck, coverage } },
     sessions,
     selfCheck,
     coverage,
@@ -256,7 +280,8 @@ export function applySessionMeta(dataset: Dataset, sessionMeta: SessionMeta[], d
   if (!byId.size) return dataset
 
   const sessions = dataset.sessions.map((s) => {
-    const m = byId.get(s.id)
+    if (s.source !== 'codebuddy') return s
+    const m = byId.get(rawIdOf(s))
     if (!m) return s
     return {
       ...s,
@@ -268,21 +293,32 @@ export function applySessionMeta(dataset: Dataset, sessionMeta: SessionMeta[], d
     }
   })
 
+  const selfCheck: SelfCheck = {
+    ...dataset.selfCheck,
+    sessionsWithoutCwd: sessions.filter((s) => !s.cwd).length,
+    sessionsWithoutTitle: sessions.filter((s) => !s.title).length,
+    sessionsUnknownModel: sessions.filter((s) => !s.modelId).length,
+  }
+  const sources: SourceInfo = {
+    ...dataset.sources,
+    sessionsDb: dbName ?? dataset.sources.sessionsDb,
+    sessionMetaCount: byId.size,
+  }
+  const cb = dataset.bySource.codebuddy
+  const bySource = cb
+    ? {
+        ...dataset.bySource,
+        codebuddy: { info: { ...cb.info, sessionsDb: sources.sessionsDb, sessionMetaCount: byId.size }, selfCheck, coverage: dataset.coverage },
+      }
+    : dataset.bySource
+
   return {
     ...dataset,
     generatedAt: new Date().toISOString(),
     sessions,
-    selfCheck: {
-      ...dataset.selfCheck,
-      sessionsWithoutCwd: sessions.filter((s) => !s.cwd).length,
-      sessionsWithoutTitle: sessions.filter((s) => !s.title).length,
-      sessionsUnknownModel: sessions.filter((s) => !s.modelId).length,
-    },
-    sources: {
-      ...dataset.sources,
-      sessionsDb: dbName ?? dataset.sources.sessionsDb,
-      sessionMetaCount: byId.size,
-    },
+    selfCheck,
+    sources,
+    bySource,
   }
 }
 
@@ -307,3 +343,5 @@ export function computeCoverage(sessions: SessionRecord[]): Coverage {
     missingDays: all.filter((d) => !days.has(d)),
   }
 }
+
+export type { CountPair }

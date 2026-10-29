@@ -1,8 +1,12 @@
 # codebuddy-token-dashboard
 
-CodeBuddy IDE 的本地用量看板：**纯前端、零上传**，在浏览器里直接扫描 `history/**/index.json` 和 `codebuddy-sessions.vscdb`，给出 Token、积分、缓存命中、项目与会话维度的可视化。
+本机 AI 用量的本地看板：**纯前端、零上传**。支持只载入 CodeBuddy、只载入 WorkBuddy、或两端都载入（合并成一份总账 + 端对比）。
 
-页面结构参考 [token.daeai.cn](https://token.daeai.cn/)（WorkBuddy 看板）的"选目录 → 浏览器内扫描"交互，但数据源、指标口径和可视化都是按 CodeBuddy 的真实文件结构重建的。
+- CodeBuddy：扫描 `history/**/index.json`，可选 `codebuddy-sessions.vscdb` 补标题与项目路径；
+- WorkBuddy：扫描 `~/.workbuddy/projects/**/*.jsonl`（必须含 `subagents/`），逐请求 usage 与积分都来自 jsonl；
+- 两端都载入时：token 直接相加（实测零重叠），并给出量差 / 同模型效率差 / 切换节奏三层端对比。
+
+页面结构参考 [token.daeai.cn](https://token.daeai.cn/)（WorkBuddy 看板）的"选目录 → 浏览器内扫描"交互，但数据源、指标口径和可视化都是按两端的真实文件结构重建的。
 
 ## 快速开始
 
@@ -21,8 +25,10 @@ Chrome / Edge 把 `AppData` 判定为**系统目录**，`showDirectoryPicker()` 
 
 | 方式 | 操作 | 说明 |
 |---|---|---|
-| **A. 拖拽**（推荐） | 把 `%LOCALAPPDATA%\CodeBuddyExtension\Data` 文件夹拖进窗口任意位置；要标题与项目路径，再把 `%APPDATA%\CodeBuddy CN\codebuddy-sessions.vscdb` 一起拖进来 | 纯前端、无需命令；浏览器若给出可持久化句柄，「重扫 / 自动刷新」也能用 |
-| **B. 快照** | 跑 `npm run collect`，把生成的 `codebuddy-usage-*.json` 导入或拖进页面 | 归档、换机、CI，或拖拽也不可用时 |
+| **A. 拖拽**（推荐） | CodeBuddy：把 `%LOCALAPPDATA%\CodeBuddyExtension\Data` 拖进窗口；要标题与项目路径，再把 `%APPDATA%\CodeBuddy CN\codebuddy-sessions.vscdb` 一起拖进来。WorkBuddy：把 `%USERPROFILE%\.workbuddy`（或其 `projects`）拖进来 | 两端可以分两次拖，后拖的只更新自己那一端；浏览器若给出可持久化句柄，「重扫 / 自动刷新」也能用 |
+| **B. 快照** | 跑 `npm run collect`，把生成的 `*-usage-*.json` 导入或拖进页面 | 归档、换机、CI，或拖拽也不可用时 |
+
+页面按**文件形状**识别数据源，不需要提前声明用的是哪个产品：`history/**/index.json` 归 CodeBuddy，`projects/**/*.jsonl` 归 WorkBuddy，一次拖入两种都能识别。
 
 ```bash
 npm run collect      # 读本机两份数据 → 一份快照 JSON（页面里导入或拖入）
@@ -42,13 +48,15 @@ npm run collect      # 读本机两份数据 → 一份快照 JSON（页面里�
 
 | 指标 | 口径 | 数据来源 |
 |---|---|---|
-| 总 Token / 输入 / 输出 | `requests[].usage` 逐条求和 | history 会话索引 |
-| 缓存命中率 | `ΣcacheTokens / ΣinputTokens` | 同上 |
-| 积分 | `Σusage.credit`（本地无单价表，不换算人民币） | 同上 |
-| 请求数 / 会话数 | 以 `usage` 存在为唯一准入条件 | 同上 |
-| 模型归属 | 会话级 `selectedModelId`（缺字段归入「未记录模型」，不猜测） | 项目索引 |
-| 会话标题 / 项目路径 / 完成状态 | `session:<conversationId>` 的 JSON | `codebuddy-sessions.vscdb` |
-| 活跃天数 / 缺失天 | 按 `startedAt` 的本地日期聚合，空档不做插值 | history 会话索引 |
+| 总 Token / 输入 / 输出 | `usage` 逐条求和（两源直接相加，跨源不去重） | CB history / WB jsonl |
+| 缓存命中率 | `Σcache / Σinput`，**合并视图按合并后的分子分母重算** | 同上 |
+| 已知积分 | `Σcredit` + 覆盖率（有 credit 字段的请求数 / 全部请求数）；本地无单价表，不换算人民币 | 同上 |
+| 请求数 | 以 `usage` 存在为唯一准入条件 | 同上 |
+| 会话数 | 主会话与 subagent 分列（WorkBuddy 的 subagent 会话独立存在） | 同上 |
+| 模型归属 | **请求级 `model` 优先**（WB），回落会话级 `selectedModelId`（CB）；都缺才归入「未记录模型」 | WB jsonl / CB 项目索引 |
+| 会话标题 | WorkBuddy 取 `ai-title`（约 6 成），CodeBuddy 取会话库 | jsonl / vscdb |
+| 项目 | 归一化 cwd（`\`→`/`、去尾斜杠，**大小写保留**）；归一后同 key 不同原串只告警，不自动合并 | 同上 |
+| 活跃天数 / 无记录日 | 按本地日期聚合；两源都没有请求的日子只作中性留白，不做插值 | 同上 |
 
 两条恒等式在解析期逐条校验并展示在「数据体检」里：
 
@@ -56,6 +64,15 @@ npm run collect      # 读本机两份数据 → 一份快照 JSON（页面里�
 inputTokens == cacheTokens + cachedMissTokens (+ cachedWriteTokens)
 totalTokens == inputTokens + outputTokens
 ```
+
+合并后还要额外成立（都展示在「数据体检」）：
+
+```
+合并 requests == Σ各源 requests == 实际会话求和     // 防合并层重复计数
+归一后同 key 不同原串的项目数 == suspectedDuplicateProjects
+```
+
+**端对比**只在两端都载入时出现，分三层：量差、同模型效率差（只比两端同名的模型）、切换节奏（逐日「只用 CB / 只用 WB / 都用 / 都没用」）。所有比率字段各自重算，绝不求和；单源视图里的积分只能叫「该端已知积分」。
 
 ## 数据体检与已知缺口
 
@@ -65,12 +82,14 @@ totalTokens == inputTokens + outputTokens
 - Inline Chat / 选中代码提问不写 `requests[]`，会少算。
 - 云端会话正文不落本地；跨机器需要靠导出的快照合并。
 - 扩展日志会轮转，早于首次启动目录的 step 级明细（含 `thinkingTokens`）已丢失。
-- history 被清理的历史空档会被画成灰色区段，不做平滑或补零伪装。
+- 两端共用同一积分账户：合并后的积分只是**账号消耗下限**，与官方账单的差额永远存在，不做比例外推。
+- WorkBuddy 首版不读 `workbuddy.db`：会话标题来自 `ai-title`（约 6 成），缺失留空。
+- 两源都没有请求的日子是**无记录日**（多工具切换的正常结果），只作中性留白，不当缺口告警。
 
 ## 验证
 
 ```bash
-npm test          # 19 个单元测试：解析、聚合、元数据合并、快照往返、SQLite 解析器
+npm test          # 38 个单元测试：解析、聚合、按源切片、合并、WorkBuddy 解析、快照往返、SQLite 解析器
 npm run verify    # 真实数据对拍：TS 管线 vs Python 独立实现
 ```
 
@@ -86,11 +105,14 @@ GLOSSARY.md        领域术语表（数据源 / 请求 / 积分 / 无记录日�
 src/
   core/            纯函数，可被 Node 与浏览器共用
     sqlite.ts      极简只读 SQLite 解析（表 b-tree + overflow 页）
-    parse.ts       history index.json → Dataset（含自检与覆盖率）
+    parse.ts       CodeBuddy history index.json → Dataset（含自检与覆盖率）
+    workbuddyParse.ts  WorkBuddy projects/**/*.jsonl → Dataset（去重 / 全零回落 / subagents）
+    merge.ts       切片归一化与合并（路径归一、源前缀、疑似同项目）
+    ids.ts         带源前缀的会话 id
     sessions.ts    sessions.vscdb → 会话维表
-    aggregate.ts   时间窗口 / 模型 / 项目 / 时段 / 分布聚合
-    snapshot.ts    快照序列化与反序列化
-    demo.ts        合成示例数据（不含任何真实路径）
+    aggregate.ts   时间窗口 / 模型 / 项目 / 时段 / 分布聚合（含按源过滤）
+    snapshot.ts    快照序列化与反序列化（v2，兼容 v1）
+    demo.ts        合成示例数据（双端，不含任何真实路径）
   platform/        浏览器侧 I/O（目录扫描、拖拽扫描、IndexedDB）
     browserScan.ts 目录选择器 / 文件夹文件框
     dropScan.ts    拖拽读取（绕开系统目录选择器）
@@ -112,3 +134,4 @@ scripts/
 - [ADR 0001](docs/adr/0001-playwright-install-scope.md)：浏览器自动化用全局 `playwright-cli`，不在仓库内装 Playwright。
 - [ADR 0002](docs/adr/0002-pure-frontend-collection.md)：为什么采集放在浏览器里、为什么自己写 SQLite 解析器、为什么用快照 JSON 作为可携带真值。
 - [ADR 0003](docs/adr/0003-merge-workbuddy-into-one-dataset.md)：WorkBuddy 作为第二个数据源并入同一份 Dataset；合并必须先做三处归一化；积分因共用账户只能作为「账号消耗下限」。
+- [ADR 0004](docs/adr/0004-source-slices-and-compare.md)：支持只载入一端 / 两端合并；端对比限定为量差、同模型效率差、节奏差；允许按源过滤，但只有一套聚合。

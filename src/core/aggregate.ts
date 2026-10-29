@@ -1,4 +1,4 @@
-import type { Dataset, RequestRecord, SessionRecord } from './types'
+import type { Dataset, RequestRecord, SessionRecord, SourceId } from './types'
 import { addDays, dayList, localDateKey, projectName, startOfDay } from './format'
 
 export type WindowPreset = '7' | '30' | '90' | 'all'
@@ -59,6 +59,10 @@ export function makeCustomWindow(from: string, to: string): WindowSpec {
 export interface Totals {
   requests: number
   sessions: number
+  /** 有请求的主会话数（不含 subagent 会话） */
+  mainSessions: number
+  /** 有请求的 subagent 会话数 */
+  subAgentSessions: number
   total: number
   input: number
   output: number
@@ -66,6 +70,8 @@ export interface Totals {
   cacheMiss: number
   cacheWrite: number
   credit: number
+  /** credit 字段真实存在的请求数：积分覆盖率的分子 */
+  creditKnownRequests: number
   activeDays: number
   cacheHitRate: number
   avgPerRequest: number
@@ -82,6 +88,8 @@ export interface DayPoint {
   cacheMiss: number
   credit: number
   requests: number
+  /** 当日各源 token，用于「按端构成」堆叠与切换节奏 */
+  bySource: Partial<Record<SourceId, number>>
 }
 
 export interface ModelStat {
@@ -94,10 +102,12 @@ export interface ModelStat {
   cache: number
   cacheMiss: number
   cacheHitRate: number
+  /** 该模型在窗口内出现过的会话数（请求级归属，一个会话可属于多个模型） */
   sessions: number
   share: number
   creditPerMillion: number
   avgPerRequest: number
+  bySource: Partial<Record<SourceId, number>>
 }
 
 export interface ProjectStat {
@@ -112,6 +122,8 @@ export interface ProjectStat {
   share: number
   /** 与 days 对齐的每日 token，用于列表内迷你趋势 */
   sparkline: number[]
+  /** 该项目在各源上的 token，用于「两端都用」标识 */
+  bySource: Partial<Record<SourceId, number>>
 }
 
 export interface SessionStat {
@@ -126,6 +138,10 @@ export interface SessionStat {
   lastTs: number
   projectKey: string
   projectName: string
+  /** 窗口内 token 最多的模型（明细行展示用） */
+  modelKey: string
+  /** 窗口内出现过的全部请求级模型 */
+  models: string[]
 }
 
 export interface RequestSizeRow {
@@ -139,6 +155,8 @@ export interface RequestSizeRow {
 
 export interface Aggregates {
   window: WindowSpec
+  /** 这份聚合结果覆盖的源；undefined = 合并视图 */
+  source?: SourceId
   totals: Totals
   prev?: Totals
   days: DayPoint[]
@@ -153,9 +171,16 @@ export interface Aggregates {
   modelDaily: Array<{ modelKey: string; values: number[] }>
 }
 
+export interface AggregateOptions {
+  /** 只聚合某个源（切片视图）；不传 = 合并视图 */
+  source?: SourceId
+}
+
 const emptyTotals = (): Totals => ({
   requests: 0,
   sessions: 0,
+  mainSessions: 0,
+  subAgentSessions: 0,
   total: 0,
   input: 0,
   output: 0,
@@ -163,6 +188,7 @@ const emptyTotals = (): Totals => ({
   cacheMiss: 0,
   cacheWrite: 0,
   credit: 0,
+  creditKnownRequests: 0,
   activeDays: 0,
   cacheHitRate: 0,
   avgPerRequest: 0,
@@ -183,14 +209,25 @@ function quantile(sorted: number[], q: number): number {
   return sorted[idx]
 }
 
+/** 会话级模型标签：没有请求级模型可用时的回落值 */
 export function modelLabel(session: SessionRecord): string {
   return session.modelId || UNKNOWN_MODEL
 }
 
-export function aggregate(dataset: Dataset, win: WindowSpec): Aggregates {
+/**
+ * 请求级优先的模型归属：WorkBuddy 每条请求自带 model，
+ * CodeBuddy 只有会话级 selectedModelId，因此按请求回落。
+ */
+export function requestModel(session: SessionRecord, r: RequestRecord): string {
+  return r.model || session.modelId || UNKNOWN_MODEL
+}
+
+export function aggregate(dataset: Dataset, win: WindowSpec, opts: AggregateOptions = {}): Aggregates {
+  const sourceFilter = opts.source
   const totals = emptyTotals()
   const dayMap = new Map<string, DayPoint>()
   const modelMap = new Map<string, ModelStat>()
+  const modelSessions = new Map<string, Set<string>>()
   const projectMap = new Map<string, ProjectStat>()
   const sessionStats: SessionStat[] = []
   const heat: number[][] = Array.from({ length: 7 }, () => new Array(24).fill(0))
@@ -204,11 +241,12 @@ export function aggregate(dataset: Dataset, win: WindowSpec): Aggregates {
   const inWindow = (ts: number) => ts >= win.start && ts < win.end
 
   for (const s of dataset.sessions) {
+    if (sourceFilter && s.source !== sourceFilter) continue
     const hit: RequestRecord[] = []
     for (const r of s.requests) if (inWindow(r.ts)) hit.push(r)
     if (!hit.length) continue
 
-    const projectKey = s.cwd || s.projectId
+    const projectKey = s.projectKey || s.cwd || s.projectId
     const pName = s.cwd ? projectName(s.cwd) : `项目 ${s.projectId.slice(0, 6)}`
     let sTotal = 0
     let sCredit = 0
@@ -217,7 +255,7 @@ export function aggregate(dataset: Dataset, win: WindowSpec): Aggregates {
     let sCache = 0
     let firstTs = Number.POSITIVE_INFINITY
     let lastTs = 0
-    const modelKey = modelLabel(s)
+    const sessionModels = new Map<string, number>()
 
     for (const r of hit) {
       const dk = localDateKey(r.ts)
@@ -232,6 +270,7 @@ export function aggregate(dataset: Dataset, win: WindowSpec): Aggregates {
         cacheMiss: 0,
         credit: 0,
         requests: 0,
+        bySource: {},
       }
       day.total += r.total
       day.input += r.input
@@ -240,8 +279,12 @@ export function aggregate(dataset: Dataset, win: WindowSpec): Aggregates {
       day.cacheMiss += r.cacheMiss
       day.credit += r.credit
       day.requests += 1
+      day.bySource[s.source] = (day.bySource[s.source] ?? 0) + r.total
       dayMap.set(dk, day)
       activeDaySet.add(dk)
+
+      const modelKey = requestModel(s, r)
+      sessionModels.set(modelKey, (sessionModels.get(modelKey) ?? 0) + r.total)
 
       const md = modelDay.get(modelKey) ?? new Map<string, number>()
       md.set(dk, (md.get(dk) ?? 0) + r.total)
@@ -267,6 +310,7 @@ export function aggregate(dataset: Dataset, win: WindowSpec): Aggregates {
         share: 0,
         creditPerMillion: 0,
         avgPerRequest: 0,
+        bySource: {},
       }
       model.total += r.total
       model.requests += 1
@@ -275,7 +319,11 @@ export function aggregate(dataset: Dataset, win: WindowSpec): Aggregates {
       model.output += r.output
       model.cache += r.cache
       model.cacheMiss += r.cacheMiss
+      model.bySource[s.source] = (model.bySource[s.source] ?? 0) + r.total
       modelMap.set(modelKey, model)
+      const ms = modelSessions.get(modelKey) ?? new Set<string>()
+      ms.add(s.id)
+      modelSessions.set(modelKey, ms)
 
       const bucket = sizes.get(modelKey)
       if (bucket) {
@@ -299,6 +347,7 @@ export function aggregate(dataset: Dataset, win: WindowSpec): Aggregates {
       totals.cacheMiss += r.cacheMiss
       totals.cacheWrite += r.cacheWrite
       totals.credit += r.credit
+      if (r.creditKnown !== false) totals.creditKnownRequests += 1
       totals.requests += 1
       requestCountInWindow += 1
       if (r.type === 'craft') typeSplit.craft += 1
@@ -317,13 +366,24 @@ export function aggregate(dataset: Dataset, win: WindowSpec): Aggregates {
       lastTs: 0,
       share: 0,
       sparkline: [],
+      bySource: {},
     }
     project.total += sTotal
     project.requests += hit.length
     project.sessions += 1
     project.credit += sCredit
     project.lastTs = Math.max(project.lastTs, lastTs)
+    project.bySource[s.source] = (project.bySource[s.source] ?? 0) + sTotal
     projectMap.set(projectKey, project)
+
+    let dominant = UNKNOWN_MODEL
+    let dominantTotal = -1
+    for (const [key, value] of sessionModels) {
+      if (value > dominantTotal) {
+        dominant = key
+        dominantTotal = value
+      }
+    }
 
     sessionStats.push({
       session: s,
@@ -337,10 +397,14 @@ export function aggregate(dataset: Dataset, win: WindowSpec): Aggregates {
       lastTs,
       projectKey,
       projectName: pName,
+      modelKey: dominant,
+      models: [...sessionModels.keys()].sort((a, b) => (sessionModels.get(b) ?? 0) - (sessionModels.get(a) ?? 0)),
     })
   }
 
   totals.sessions = sessionStats.length
+  totals.subAgentSessions = sessionStats.filter((s) => s.session.isSubAgent).length
+  totals.mainSessions = totals.sessions - totals.subAgentSessions
   finalizeTotals(totals, activeDaySet.size)
 
   // 补齐窗口内没有数据的日子，让趋势图与覆盖率判断能看见"空档"
@@ -348,7 +412,7 @@ export function aggregate(dataset: Dataset, win: WindowSpec): Aggregates {
   const spanEnd = Math.min(win.end, Date.now() + 86400000)
   if (win.start < spanEnd) {
     for (const key of dayList(win.start, spanEnd - 1)) {
-      days.push(dayMap.get(key) ?? { key, ts: new Date(`${key}T00:00:00`).getTime(), total: 0, input: 0, output: 0, cache: 0, cacheMiss: 0, credit: 0, requests: 0 })
+      days.push(dayMap.get(key) ?? { key, ts: new Date(`${key}T00:00:00`).getTime(), total: 0, input: 0, output: 0, cache: 0, cacheMiss: 0, credit: 0, requests: 0, bySource: {} })
     }
   }
 
@@ -358,7 +422,7 @@ export function aggregate(dataset: Dataset, win: WindowSpec): Aggregates {
     m.share = totals.total ? m.total / totals.total : 0
     m.creditPerMillion = m.total ? (m.credit / m.total) * 1e6 : 0
     m.avgPerRequest = m.requests ? m.total / m.requests : 0
-    m.sessions = sessionStats.filter((s) => modelLabel(s.session) === m.key).length
+    m.sessions = modelSessions.get(m.key)?.size ?? 0
   }
 
   const projects = [...projectMap.values()].sort((a, b) => b.total - a.total)
@@ -387,10 +451,11 @@ export function aggregate(dataset: Dataset, win: WindowSpec): Aggregates {
     }
   })
 
-  const prev = computePrevTotals(dataset, win)
+  const prev = computePrevTotals(dataset, win, sourceFilter)
 
   return {
     window: win,
+    source: sourceFilter,
     totals,
     prev,
     days,
@@ -405,11 +470,12 @@ export function aggregate(dataset: Dataset, win: WindowSpec): Aggregates {
   }
 }
 
-function computePrevTotals(dataset: Dataset, win: WindowSpec): Totals | undefined {
+function computePrevTotals(dataset: Dataset, win: WindowSpec, sourceFilter?: SourceId): Totals | undefined {
   if (win.preset === 'all' || win.prevEnd <= win.prevStart) return undefined
   const t = emptyTotals()
   const active = new Set<string>()
   for (const s of dataset.sessions) {
+    if (sourceFilter && s.source !== sourceFilter) continue
     let any = false
     for (const r of s.requests) {
       if (r.ts < win.prevStart || r.ts >= win.prevEnd) continue
@@ -421,10 +487,30 @@ function computePrevTotals(dataset: Dataset, win: WindowSpec): Totals | undefine
       t.cache += r.cache
       t.cacheMiss += r.cacheMiss
       t.credit += r.credit
+      if (r.creditKnown !== false) t.creditKnownRequests += 1
       active.add(localDateKey(r.ts))
     }
-    if (any) t.sessions += 1
+    if (any) {
+      t.sessions += 1
+      if (s.isSubAgent) t.subAgentSessions += 1
+      else t.mainSessions += 1
+    }
   }
   if (!t.requests) return undefined
   return finalizeTotals(t, active.size)
+}
+
+/**
+ * 合并视图 + 各源切片视图，一次算完。
+ * 三个视图共用同一个 aggregate()，避免"端对比"和"总账"用两套口径。
+ */
+export function aggregatesBySource(
+  dataset: Dataset,
+  win: WindowSpec,
+): { merged: Aggregates; bySource: Partial<Record<SourceId, Aggregates>> } {
+  const bySource: Partial<Record<SourceId, Aggregates>> = {}
+  for (const source of Object.keys(dataset.bySource) as SourceId[]) {
+    bySource[source] = aggregate(dataset, win, { source })
+  }
+  return { merged: aggregate(dataset, win), bySource }
 }

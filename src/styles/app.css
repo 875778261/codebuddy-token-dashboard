@@ -1475,3 +1475,289 @@ table.req td.l {
     display: none;
   }
 }
+
+/* ---------- 多源：来源标识 ---------- */
+
+.src-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  display: inline-block;
+  flex: none;
+  background: var(--ink-4);
+}
+
+.src-dot.codebuddy {
+  background: var(--accent);
+}
+
+.src-dot.workbuddy {
+  background: var(--teal);
+}
+
+.split-line {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+  color: var(--ink-4);
+  font-size: 10px;
+}
+
+.split-line span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.src-tag {
+  font-size: 9px;
+  line-height: 15px;
+  padding: 0 4px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  font-weight: 600;
+  flex: none;
+  letter-spacing: 0.2px;
+}
+
+.src-tag.codebuddy {
+  color: var(--accent);
+}
+
+.src-tag.workbuddy {
+  color: var(--teal);
+}
+
+.tag.sub {
+  color: var(--violet);
+  border-color: var(--violet);
+}
+
+.multi {
+  color: var(--ink-4);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.badge.both {
+  font-size: 9px;
+  line-height: 14px;
+  padding: 0 4px;
+  border-radius: 3px;
+  color: var(--violet);
+  border: 1px solid var(--violet);
+  font-weight: 600;
+  flex: none;
+}
+
+/* ---------- 端对比 ---------- */
+
+.cmp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cmp-split {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cmp-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--line);
+}
+
+.cmp-bar i {
+  display: block;
+  height: 100%;
+}
+
+.cmp-split-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.cmp-split-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.cmp-split-legend i {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+}
+
+.cmp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  table-layout: auto;
+}
+
+.cmp-table th {
+  font-size: 9.5px;
+  color: var(--ink-4);
+  font-weight: 500;
+  padding: 0 6px 6px;
+  text-align: right;
+  letter-spacing: 0.3px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.cmp-table th.l,
+.cmp-table td.l {
+  text-align: left;
+}
+
+.cmp-table td {
+  padding: 6px;
+  text-align: right;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cmp-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.cmp-table td small {
+  color: var(--ink-4);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.cmp-table td.num {
+  font-weight: 650;
+}
+
+.cmp-table td.dim {
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+.cmp-table.compact td {
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+.cmp-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.cmp-sub b {
+  font-size: 11.5px;
+}
+
+.cmp-sub span {
+  font-size: 10.5px;
+  color: var(--ink-4);
+}
+
+.cmp-days-strip {
+  display: flex;
+  gap: 1px;
+  height: 16px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--line);
+}
+
+.cmp-days-strip i {
+  flex: 1;
+  min-width: 1px;
+  background: var(--line-strong);
+}
+
+.cmp-day.none {
+  background: var(--line-strong);
+  opacity: 0.45;
+}
+
+.src-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  color: var(--ink-3);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+.src-empty b {
+  color: var(--ink);
+  font-size: 12.5px;
+}
+
+/* ---------- 体检：逐源溯源 ---------- */
+
+.src-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.src-block {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--card-2);
+}
+
+.src-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+}
+
+.src-title span:last-child {
+  margin-left: auto;
+  color: var(--ink-4);
+  font-size: 10px;
+}
+
+.src-line {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  line-height: 1.7;
+  word-break: break-all;
+}
+
+.src-line.ellipsis {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 760px) {
+  .cmp-table th:nth-child(4),
+  .cmp-table td:nth-child(4) {
+    display: none;
+  }
+}
+
+.cmp-table td .cell-sub {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--ink-4);
+  margin-top: 1px;
+}

@@ -1,12 +1,17 @@
-import type { Dataset } from './types'
-import { computeCoverage } from './parse'
+import type { Dataset, SelfCheck, SourceId, SourceInfo } from './types'
+import { SOURCE_ORDER, SOURCE_META } from './types'
+import { computeCoverage, emptySelfCheck, totalsOf } from './parse'
+import { normalizeDataset } from './merge'
 
 /**
  * 快照 = 单一 JSON 文件，是这台机器上的"可携带真值"。
  * 用途：归档（日志会被轮转 / history 会被清理）、换机比对、无目录权限时按文件导入。
  * 不包含任何消息正文，只有会话标题、项目路径与请求级 usage。
+ *
+ * v2：加入 source / bySource / 请求级 model，使「只载入一端」的快照也能单独导入后再与另一端合并。
+ * v1：全部视为 CodeBuddy，导入时补前缀与源标记。
  */
-export const SNAPSHOT_SCHEMA = 1
+export const SNAPSHOT_SCHEMA = 2
 
 export function serializeDataset(dataset: Dataset): string {
   return JSON.stringify(
@@ -15,10 +20,14 @@ export function serializeDataset(dataset: Dataset): string {
       generatedAt: dataset.generatedAt,
       isDemo: dataset.isDemo,
       sources: dataset.sources,
+      bySource: dataset.bySource,
       selfCheck: dataset.selfCheck,
       coverage: dataset.coverage,
       sessions: dataset.sessions.map((s) => ({
         id: s.id,
+        rawId: s.rawId,
+        source: s.source,
+        isSubAgent: s.isSubAgent,
         projectId: s.projectId,
         type: s.type,
         chatMode: s.chatMode,
@@ -36,9 +45,13 @@ export function serializeDataset(dataset: Dataset): string {
   )
 }
 
-export function snapshotFileName(now = new Date()): string {
+/** 文件名带源：一眼看出这份快照覆盖了哪几端 */
+export function snapshotFileName(now = new Date(), sources?: SourceId[]): string {
   const p = (n: number) => String(n).padStart(2, '0')
-  return `codebuddy-usage-${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}-${p(now.getHours())}${p(now.getMinutes())}.json`
+  const stamp = `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}-${p(now.getHours())}${p(now.getMinutes())}`
+  const list = SOURCE_ORDER.filter((s) => (sources ?? ['codebuddy']).includes(s))
+  if (list.length <= 1) return `${list[0] ?? 'codebuddy'}-usage-${stamp}.json`
+  return `ai-usage-${list.map((s) => SOURCE_META[s].short.toLowerCase()).join('+')}-${stamp}.json`
 }
 
 export function parseSnapshot(text: string): Dataset {
@@ -50,63 +63,31 @@ export function parseSnapshot(text: string): Dataset {
   }
   const doc = raw as Partial<Dataset> & { sessions?: unknown }
   if (!doc || typeof doc !== 'object' || !Array.isArray(doc.sessions)) {
-    throw new Error('不是 CodeBuddy 用量快照（缺少 sessions 数组）')
+    throw new Error('不是用量快照（缺少 sessions 数组）')
   }
   const sessions = (doc.sessions as Dataset['sessions']).map((s) => {
     const requests = (s.requests ?? []).map((r) => ({ ...r }))
-    const totals = {
-      requests: requests.length,
-      total: 0,
-      input: 0,
-      output: 0,
-      cache: 0,
-      cacheMiss: 0,
-      cacheWrite: 0,
-      credit: 0,
-      firstTs: Number.POSITIVE_INFINITY,
-      lastTs: 0,
-    }
-    for (const r of requests) {
-      totals.total += r.total
-      totals.input += r.input
-      totals.output += r.output
-      totals.cache += r.cache
-      totals.cacheMiss += r.cacheMiss
-      totals.cacheWrite += r.cacheWrite
-      totals.credit += r.credit
-      if (r.ts < totals.firstTs) totals.firstTs = r.ts
-      if (r.ts > totals.lastTs) totals.lastTs = r.ts
-    }
-    return { ...s, requests, totals }
+    return { ...s, requests, totals: totalsOf(requests) }
   })
+  const info: SourceInfo = doc.sources ?? {
+    historyRoots: [],
+    projectCount: 0,
+    convIndexCount: 0,
+    sessionMetaCount: 0,
+    scannedAt: doc.generatedAt ?? new Date().toISOString(),
+    elapsedMs: 0,
+  }
+  const selfCheck: SelfCheck = doc.selfCheck ?? emptySelfCheck()
   const dataset: Dataset = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     isDemo: doc.isDemo ? true : undefined,
     generatedAt: doc.generatedAt ?? new Date().toISOString(),
-    sources: doc.sources ?? {
-      historyRoots: [],
-      projectCount: 0,
-      convIndexCount: 0,
-      sessionMetaCount: 0,
-      scannedAt: doc.generatedAt ?? new Date().toISOString(),
-      elapsedMs: 0,
-    },
+    sources: info,
+    bySource: doc.bySource ?? {},
     sessions,
-    selfCheck: doc.selfCheck ?? {
-      projectIndexFiles: 0,
-      convIndexFiles: 0,
-      parseErrors: 0,
-      requestsTotal: 0,
-      requestsWithUsage: 0,
-      inFlightSkipped: 0,
-      inputEqCachePlusMiss: { ok: 0, fail: 0 },
-      totalEqInputPlusOutput: { ok: 0, fail: 0 },
-      sessionsWithoutRequests: 0,
-      sessionsUnknownModel: 0,
-      sessionsWithoutCwd: 0,
-      sessionsWithoutTitle: 0,
-    },
+    selfCheck,
     coverage: doc.coverage ?? computeCoverage(sessions),
   }
-  return dataset
+  // 统一补齐源标记、id 前缀、项目归一 key 与 bySource（v1 快照走这里）
+  return normalizeDataset(dataset, 'codebuddy')
 }
