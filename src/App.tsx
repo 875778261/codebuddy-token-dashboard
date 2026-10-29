@@ -622,7 +622,7 @@ export default function App() {
           {dataset ? `窗口：${agg?.window.label} · ${dataset.coverage.first ?? '—'} → ${dataset.coverage.last ?? '—'}` : '等待选择数据目录'}
           {dataset?.generatedAt ? ` · 快照生成于 ${new Date(dataset.generatedAt).toLocaleString('zh-CN')}` : ''}
         </span>
-        {/* <span>纯前端 · 解析口径见 docs/data-sources.md · 数据不上传</span> */}
+        {/* <span>纯前端 · 解析口径见 docs/codebuddy-ide-data-sources.md · 数据不上传</span> */}
       </footer>
 
       <input

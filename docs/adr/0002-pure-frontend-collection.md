@@ -2,7 +2,7 @@
 
 - 状态：已采纳
 - 日期：2026-10-29
-- 相关：`docs/data-sources.md`
+- 相关：`docs/codebuddy-ide-data-sources.md`
 
 ## 背景
 

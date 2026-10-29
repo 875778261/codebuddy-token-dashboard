@@ -95,7 +95,7 @@ src/
     dropScan.ts    拖拽读取（绕开系统目录选择器）
   ui/              卡片与图表组件
 docs/
-  data-sources.md  本机数据源勘察报告（口径依据）
+  codebuddy-ide-data-sources.md  本机数据源勘察报告（口径依据）
   adr/             架构决策记录
 scripts/
   bridge.mjs       生成 cb-bridge 目录联接
