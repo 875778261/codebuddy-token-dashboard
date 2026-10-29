@@ -44,6 +44,8 @@ export default function App() {
   const [dragging, setDragging] = useState(false)
   const [modelFocus, setModelFocus] = useState<string | null>(null)
   const [auto, setAuto] = useState(() => prefs.autoRefresh())
+  /** 是否持有可复用的目录句柄（决定「重扫」能不能真的刷新，ref 不能驱动 UI） */
+  const [hasDir, setHasDir] = useState(false)
 
   const dirRef = useRef<FileSystemDirectoryHandle | null>(null)
   const dragDepth = useRef(0)
@@ -71,7 +73,10 @@ export default function App() {
         setRestored(true)
       }
       const handle = await idbGet<FileSystemDirectoryHandle>('dir')
-      if (alive && handle) dirRef.current = handle
+      if (alive && handle) {
+        dirRef.current = handle
+        setHasDir(true)
+      }
     })()
     return () => {
       alive = false
@@ -96,6 +101,7 @@ export default function App() {
   const handleReset = useCallback(() => {
     scanRef.current = null
     dirRef.current = null
+    setHasDir(false)
     setDataset(null)
     setRestored(false)
     setModelFocus(null)
@@ -149,6 +155,7 @@ export default function App() {
         return
       }
       dirRef.current = dir
+      setHasDir(true)
       idbSet('dir', dir)
       const res = await scanDirectoryHandle(dir, (stage, done, total) =>
         setStatus({ text: total ? `${stage} ${done}/${total}` : `${stage} ${done}` }),
@@ -172,13 +179,12 @@ export default function App() {
   const handleRescan = useCallback(async () => {
     const dir = dirRef.current
     if (!dir) {
-      // 拖拽/导入得到的数据没有目录句柄，浏览器不会替我们记住路径
+      // 快照导入 / 文件夹文件框进来的数据没有目录句柄，浏览器不会替我们记住路径：
+      // 这里必须明说下一步怎么做，否则按钮看起来就是"点了没反应"
       setStatus({
         text: dataset?.isDemo
-          ? '当前是示例数据，没有真实路径。请先拖入或选择真实数据目录，或点右上角「重置」回到初始页。'
-          : scanRef.current
-            ? '拖拽进来的数据不在目录权限内：把 Data 文件夹再拖一次即可刷新。'
-            : '当前数据来自快照导入。想看最新用量，请重新拖入或选择目录。',
+          ? '示例数据没有真实路径，无法重扫。把 CodeBuddyExtension\\Data 文件夹拖进窗口，或点「重置」回初始页。'
+          : '当前数据没有可复用的目录句柄（来自快照导入或「文件夹」文件框）。刷新方式：把 Data 文件夹再拖进窗口，或点「目录」重选。',
       })
       return
     }
@@ -187,7 +193,8 @@ export default function App() {
     try {
       if (!(await ensurePermission(dir))) {
         setBusy(false)
-        setStatus({ text: '需要重新授权目录访问，请重选一次目录。', error: true })
+        setHasDir(false)
+        setStatus({ text: '浏览器收回了上次目录的读取权限，点「目录」重新选一次即可恢复一键重扫。', error: true })
         return
       }
       const res = await scanDirectoryHandle(dir, (stage, done, total) => setStatus({ text: total ? `${stage} ${done}/${total}` : stage }))
@@ -246,6 +253,7 @@ export default function App() {
       void firstDirectoryHandle(handles).then((dir) => {
         if (!dir) return
         dirRef.current = dir
+        setHasDir(true)
         idbSet('dir', dir)
       })
       setBusy(true)
@@ -395,6 +403,15 @@ export default function App() {
     setModelFocus(null)
   }, [dataset, preset, custom])
 
+  // 仪表盘里也必须有非错误状态的反馈（否则「重扫」这类操作点了像没反应），
+  // 扫描中的进度不自动消失，单纯的提示 4.2s 后收起；错误另走 banner。
+  useEffect(() => {
+    if (!dataset || !status || status.error) return
+    if (busy) return
+    const timer = window.setTimeout(() => setStatus((s) => (s === status ? null : s)), 4200)
+    return () => window.clearTimeout(timer)
+  }, [status, dataset, busy])
+
   const applyCustom = (nextFrom: string, nextTo: string) => {
     setFromDate(nextFrom)
     setToDate(nextTo)
@@ -463,7 +480,13 @@ export default function App() {
                   日期
                 </button>
               )}
-              <button type="button" className="btn ghost" onClick={handleRescan} disabled={busy} title="按上次的目录重新扫描">
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={handleRescan}
+                disabled={busy}
+                title={hasDir ? '按上次的目录重新扫描，读到最新用量' : '当前数据没有可复用的目录句柄：点一下会提示怎么刷新'}
+              >
                 {busy ? <span className="spin" /> : '↻'} 重扫
               </button>
               <button type="button" className="btn ghost" onClick={handlePickDirectory} disabled={busy} title="更换数据目录">
@@ -520,10 +543,14 @@ export default function App() {
 
             {restored && !dataset.isDemo ? (
               <div className="banner info">
-                已恢复上次扫描结果。数据是缓存快照，重新扫描可看到最新用量。
-                <button type="button" className="btn" onClick={handleRescan} disabled={busy}>
-                  {busy ? '扫描中…' : '重新扫描'}
-                </button>
+                {hasDir
+                  ? '已恢复上次扫描结果（缓存快照）。点「重新扫描」读取最新用量。'
+                  : '已恢复上次扫描结果（缓存快照）。这份数据没有可复用的目录句柄，想刷新请把 Data 文件夹再拖进窗口。'}
+                {hasDir ? (
+                  <button type="button" className="btn" onClick={handleRescan} disabled={busy}>
+                    {busy ? '扫描中…' : '重新扫描'}
+                  </button>
+                ) : null}
               </div>
             ) : null}
 
@@ -567,6 +594,15 @@ export default function App() {
         )}
       </div>
 
+      {dataset && status && !status.error ? (
+        <div className="toast-stack" aria-live="polite">
+          <div className="toast">
+            {busy ? <span className="spin" /> : null}
+            <span>{status.text}</span>
+          </div>
+        </div>
+      ) : null}
+
       {dragging ? (
         <div className="drop-overlay">
           <div className="drop-card">
@@ -586,7 +622,7 @@ export default function App() {
           {dataset ? `窗口：${agg?.window.label} · ${dataset.coverage.first ?? '—'} → ${dataset.coverage.last ?? '—'}` : '等待选择数据目录'}
           {dataset?.generatedAt ? ` · 快照生成于 ${new Date(dataset.generatedAt).toLocaleString('zh-CN')}` : ''}
         </span>
-        <span>纯前端 · 解析口径见 docs/data-sources.md · 数据不上传</span>
+        {/* <span>纯前端 · 解析口径见 docs/data-sources.md · 数据不上传</span> */}
       </footer>
 
       <input

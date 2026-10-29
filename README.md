@@ -28,7 +28,7 @@ Chrome / Edge 把 `AppData` 判定为**系统目录**，`showDirectoryPicker()` 
 npm run collect      # 读本机两份数据 → 一份快照 JSON（页面里导入或拖入）
 ```
 
-> 拖拽进来的数据默认不保留目录句柄（Chromium 有时会给，给了就自动记住路径，否则「重扫」会提示再拖一次）。
+> 拖完是否还能「重扫」，取决于浏览器有没有给可持久化目录句柄：Edge / Chrome 实测会给（`DataTransferItem.getAsFileSystemHandle` 拿到 directory handle 并写进 IndexedDB），因此拖完点「重扫」能读到新增用量；只有快照导入、`<input webkitdirectory>` 文件框、示例数据这三条路径没有句柄，顶栏「重扫」会明确提示改用拖拽或「目录」。
 > **拖拽必须通过 `http(s)` 打开页面**（`npm run dev` 或任意静态托管）：`file://` 下浏览器不会为拖入的目录创建文件系统条目，表现是"拖了没反应"。`file://` 场景请用快照导入。
 
 ### 踩过的坑（供后来者参考）

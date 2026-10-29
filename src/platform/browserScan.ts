@@ -135,7 +135,9 @@ export async function scanDirectoryHandle(
 ): Promise<ScanResult> {
   const started = performance.now()
   const state: WalkState = { indexes: [], visited: 0 }
-  await walk(root as unknown as DirHandleLike, [], state, 0, onProgress)
+  // 带上根目录名：否则 buildDataset 推导出的 history 根只剩 "history"，
+  // 「数据体检」里的采集源会丢掉是哪一层目录扫出来的（拖拽通道本来就是这样）
+  await walk(root as unknown as DirHandleLike, [root.name], state, 0, onProgress)
 
   const files: ScannedFile[] = []
   for (let i = 0; i < state.indexes.length; i++) {

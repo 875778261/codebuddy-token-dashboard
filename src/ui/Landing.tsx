@@ -99,7 +99,7 @@ export function Landing({
             )}
           </span>
           <span style={{ display: 'block', marginTop: 6, color: 'var(--ink-4)' }}>
-            拖拽进来后浏览器通常不保留目录句柄，「重扫」会提示再拖一次；不碰浏览器的话，跑 <kbd>npm run collect</kbd> 生成快照 JSON 再拖进来。
+            Chromium 系浏览器拖拽时会顺手给出目录句柄，因此拖完仍可用「重扫」拿最新用量；若某个环境没给句柄，页面会明确提示你把文件夹再拖一次。
           </span>
         </div>
 
