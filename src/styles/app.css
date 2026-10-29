@@ -463,14 +463,34 @@ button {
   margin-bottom: 16px;
 }
 
+/* 同一行的卡片等高：矮卡把剩余空间分给内容，而不是堆在底部留洞 */
 .grid.two {
   grid-template-columns: minmax(0, 1.42fr) minmax(0, 1fr);
   margin-bottom: 16px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .grid.two.rev {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.42fr);
+}
+
+/* 文字密集的卡（数据体检）需要更宽的一侧 */
+.grid.two.right-wide {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.62fr);
+}
+
+/* 仪表盘纵向节奏统一交给 flex gap：
+   之前行间距来自 .grid 的 margin-bottom，而「会话明细」是裸 .card 没有下边距，
+   于是它和下面的「单次请求规模 / 数据体检」贴在一起（实测 0px），其余行都是 16px。 */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.shell .stack > .grid,
+.shell .stack > .banner {
+  margin-bottom: 0;
 }
 
 .card {
@@ -482,7 +502,37 @@ button {
   -webkit-backdrop-filter: blur(20px) saturate(150%);
   padding: 16px 18px 14px;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+/* 卡片内部三段式：head 定高 / body 吸收剩余高度 / foot 贴底 */
+.card > .card-foot {
+  margin-top: auto;
+}
+
+.card > .heat,
+.card > .mlist,
+.card > .plist,
+.card > .dist,
+.card > .chart-fill,
+.card > .health-cols,
+.card > .table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.chart-fill {
+  display: flex;
+  flex-direction: column;
+  min-height: 268px;
+}
+
+/* 图表卡吸收行内剩余高度，但别被列表卡压得太扁 */
+.card > .chart-fill {
+  min-height: 300px;
 }
 
 .card:hover {
@@ -626,8 +676,9 @@ button {
 .heat {
   display: grid;
   grid-template-columns: 30px repeat(24, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
   gap: 2px;
-  align-items: center;
+  align-items: stretch;
 }
 
 .heat .hlab {
@@ -642,7 +693,8 @@ button {
 }
 
 .heat .hcell {
-  height: 15px;
+  height: auto;
+  min-height: 15px;
   border-radius: 3px;
   background: var(--card-2);
   transition: transform 0.12s ease, outline-color 0.12s;
@@ -690,6 +742,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  justify-content: space-evenly;
 }
 
 .mrow {
@@ -778,6 +831,7 @@ button {
 .plist {
   display: flex;
   flex-direction: column;
+  justify-content: space-evenly;
 }
 
 .prow {
@@ -841,7 +895,8 @@ button {
 
 .table-wrap {
   overflow: auto;
-  max-height: 460px;
+  /* 行少时不撑出空盒，行多时跟着视口走 */
+  max-height: clamp(260px, 48vh, 560px);
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--card-2);
@@ -1022,9 +1077,23 @@ table.req td.l {
 
 /* ---------- health ---------- */
 
+/* 宽卡两栏：左自检/覆盖，右来源/缺口 */
+.health-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.02fr) minmax(0, 1fr);
+  gap: 0 22px;
+  align-items: start;
+}
+
+.health-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .checks {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -1162,6 +1231,7 @@ table.req td.l {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  justify-content: space-evenly;
 }
 
 .dist-row {
@@ -1319,10 +1389,17 @@ table.req td.l {
 
 @media (max-width: 1180px) {
   .grid.two,
-  .grid.two.rev {
+  .grid.two.rev,
+  .grid.two.right-wide {
     grid-template-columns: minmax(0, 1fr);
   }
   .detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .chart-fill {
+    min-height: 240px;
+  }
+  .health-cols {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -1344,7 +1421,8 @@ table.req td.l {
     font-size: 21px;
   }
   .heat .hcell {
-    height: 11px;
+    height: auto;
+    min-height: 11px;
   }
   .prow {
     grid-template-columns: minmax(0, 1fr) 66px;

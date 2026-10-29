@@ -508,7 +508,7 @@ export default function App() {
             supportsDirectory={supportsDirectoryPicker()}
           />
         ) : (
-          <>
+          <div className="stack">
             {dataset.isDemo ? (
               <div className="banner info">
                 当前是<b>示例数据</b>（合成的 64 天用量，不含任何真实路径），仅用于预览界面，不会写入本地缓存。
@@ -559,11 +559,11 @@ export default function App() {
 
             <SessionCard agg={agg} palette={palette} modelFocus={modelFocus} onClearFocus={() => setModelFocus(null)} />
 
-            <div className="grid two">
+            <div className="grid two right-wide">
               <DistCard agg={agg} palette={palette} />
               <HealthCard dataset={dataset} agg={agg} onExport={handleExport} />
             </div>
-          </>
+          </div>
         )}
       </div>
 

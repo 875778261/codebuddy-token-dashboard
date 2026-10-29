@@ -287,7 +287,9 @@ export function TrendCard({
           </div>
         </div>
       </div>
-      <Chart option={option} height={292} ariaLabel="每日用量趋势图" />
+      <div className="chart-fill">
+        <Chart option={option} height="fill" ariaLabel="每日用量趋势图" />
+      </div>
       <div className="legend-row" style={{ marginTop: 6 }}>
         {legend.map((l) => (
           <span key={l.label}>

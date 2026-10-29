@@ -31,7 +31,8 @@ export function Chart({
   ariaLabel,
 }: {
   option: Option
-  height: number
+  /** 数字=固定高度；'fill'=撑满父容器（配合 .chart-fill） */
+  height: number | 'fill'
   onEvents?: Record<string, (params: unknown) => void>
   ariaLabel?: string
 }) {
@@ -69,5 +70,5 @@ export function Chart({
     }
   }, [onEvents])
 
-  return <div ref={ref} style={{ width: '100%', height }} role="img" aria-label={ariaLabel} />
+  return <div ref={ref} style={{ width: '100%', height: height === 'fill' ? '100%' : height }} role="img" aria-label={ariaLabel} />
 }
