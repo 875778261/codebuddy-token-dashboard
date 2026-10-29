@@ -1,0 +1,236 @@
+{
+ "summary": {
+  "reqs": 663,
+  "no_usage": 1,
+  "total": 879462435,
+  "inp": 871625468,
+  "out": 7836967,
+  "cache": 857559749,
+  "credit": 1592.4200000000005,
+  "types": {
+   "ask": 8,
+   "craft": 655
+  },
+  "credit_by_type": {
+   "ask": 0,
+   "craft": 598
+  },
+  "fields": {
+   "inputTokens": 662,
+   "outputTokens": 662,
+   "totalTokens": 662,
+   "lastTokens": 662,
+   "cacheTokens": 662,
+   "cachedWriteTokens": 662,
+   "cachedMissTokens": 662,
+   "credit": 662
+  },
+  "convs": 127
+ },
+ "model_dist": {
+  "hy3": 476,
+  "deepseek-v4.1-flash": 11938,
+  "glm-5.3-flash": 785,
+  "space-bunny": 713,
+  "hy4-preview": 462,
+  "auto": 70,
+  "step-5-preview": 62
+ },
+ "daily": {
+  "2026-08-10": {
+   "requests": 2,
+   "totalTokens": 439592,
+   "credit": 0.0
+  },
+  "2026-08-19": {
+   "requests": 1,
+   "totalTokens": 26678,
+   "credit": 0.0
+  },
+  "2026-08-25": {
+   "requests": 1,
+   "totalTokens": 0,
+   "credit": 0.0
+  },
+  "2026-08-28": {
+   "requests": 9,
+   "totalTokens": 578847,
+   "credit": 0.0
+  },
+  "2026-09-01": {
+   "requests": 10,
+   "totalTokens": 2509929,
+   "credit": 9.31
+  },
+  "2026-09-03": {
+   "requests": 10,
+   "totalTokens": 7994851,
+   "credit": 0.0
+  },
+  "2026-09-04": {
+   "requests": 16,
+   "totalTokens": 6529547,
+   "credit": 0.0
+  },
+  "2026-09-07": {
+   "requests": 4,
+   "totalTokens": 9970832,
+   "credit": 0.0
+  },
+  "2026-09-08": {
+   "requests": 16,
+   "totalTokens": 8475954,
+   "credit": 18.55
+  },
+  "2026-09-09": {
+   "requests": 11,
+   "totalTokens": 7723641,
+   "credit": 22.939999999999998
+  },
+  "2026-09-10": {
+   "requests": 14,
+   "totalTokens": 8009508,
+   "credit": 32.81
+  },
+  "2026-09-11": {
+   "requests": 17,
+   "totalTokens": 14830398,
+   "credit": 29.609999999999996
+  },
+  "2026-09-15": {
+   "requests": 9,
+   "totalTokens": 16708445,
+   "credit": 38.629999999999995
+  },
+  "2026-09-16": {
+   "requests": 19,
+   "totalTokens": 26970059,
+   "credit": 59.42000000000001
+  },
+  "2026-09-17": {
+   "requests": 9,
+   "totalTokens": 5996050,
+   "credit": 22.209999999999997
+  },
+  "2026-09-18": {
+   "requests": 28,
+   "totalTokens": 33606236,
+   "credit": 89.16
+  },
+  "2026-09-19": {
+   "requests": 23,
+   "totalTokens": 12704886,
+   "credit": 19.630000000000003
+  },
+  "2026-09-20": {
+   "requests": 31,
+   "totalTokens": 35493547,
+   "credit": 53.21000000000001
+  },
+  "2026-09-23": {
+   "requests": 15,
+   "totalTokens": 21825141,
+   "credit": 29.209999999999997
+  },
+  "2026-09-24": {
+   "requests": 11,
+   "totalTokens": 13354544,
+   "credit": 32.86
+  },
+  "2026-09-28": {
+   "requests": 76,
+   "totalTokens": 145534866,
+   "credit": 196.13999999999996
+  },
+  "2026-09-29": {
+   "requests": 14,
+   "totalTokens": 35195254,
+   "credit": 57.199999999999996
+  },
+  "2026-09-30": {
+   "requests": 23,
+   "totalTokens": 31934446,
+   "credit": 61.39
+  },
+  "2026-10-08": {
+   "requests": 2,
+   "totalTokens": 178064,
+   "credit": 1.6099999999999999
+  },
+  "2026-10-09": {
+   "requests": 28,
+   "totalTokens": 29095709,
+   "credit": 63.519999999999996
+  },
+  "2026-10-10": {
+   "requests": 1,
+   "totalTokens": 1046108,
+   "credit": 1.01
+  },
+  "2026-10-12": {
+   "requests": 22,
+   "totalTokens": 35823156,
+   "credit": 159.32000000000005
+  },
+  "2026-10-13": {
+   "requests": 47,
+   "totalTokens": 66774844,
+   "credit": 116.07000000000002
+  },
+  "2026-10-14": {
+   "requests": 32,
+   "totalTokens": 62939744,
+   "credit": 93.18999999999998
+  },
+  "2026-10-15": {
+   "requests": 16,
+   "totalTokens": 26536922,
+   "credit": 72.69999999999999
+  },
+  "2026-10-16": {
+   "requests": 27,
+   "totalTokens": 44337865,
+   "credit": 86.74
+  },
+  "2026-10-17": {
+   "requests": 17,
+   "totalTokens": 24564110,
+   "credit": 27.469999999999995
+  },
+  "2026-10-18": {
+   "requests": 22,
+   "totalTokens": 34586527,
+   "credit": 25.35
+  },
+  "2026-10-19": {
+   "requests": 36,
+   "totalTokens": 51025628,
+   "credit": 87.08999999999999
+  },
+  "2026-10-20": {
+   "requests": 16,
+   "totalTokens": 25267403,
+   "credit": 37.87
+  },
+  "2026-10-21": {
+   "requests": 1,
+   "totalTokens": 2654128,
+   "credit": 1.76
+  },
+  "2026-10-23": {
+   "requests": 15,
+   "totalTokens": 22198340,
+   "credit": 31.630000000000003
+  },
+  "2026-10-28": {
+   "requests": 9,
+   "totalTokens": 5816104,
+   "credit": 14.139999999999999
+  },
+  "2026-10-29": {
+   "requests": 2,
+   "totalTokens": 204532,
+   "credit": 0.6699999999999999
+  }
+ }
+}
