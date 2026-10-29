@@ -82,6 +82,7 @@ npm run verify    # 真实数据对拍：TS 管线 vs Python 独立实现
 ## 目录结构
 
 ```
+GLOSSARY.md        领域术语表（数据源 / 请求 / 积分 / 无记录日）
 src/
   core/            纯函数，可被 Node 与浏览器共用
     sqlite.ts      极简只读 SQLite 解析（表 b-tree + overflow 页）
@@ -96,6 +97,8 @@ src/
   ui/              卡片与图表组件
 docs/
   codebuddy-ide-data-sources.md  本机数据源勘察报告（口径依据）
+  workbuddy-data-sources.md      WorkBuddy 数据源勘察报告（含 token.daeai.cn 口径对拍）
+  exploration/     复核脚本（cb_verify.py / wb_verify.py）与参考输出
   adr/             架构决策记录
 scripts/
   bridge.mjs       生成 cb-bridge 目录联接
@@ -108,3 +111,4 @@ scripts/
 
 - [ADR 0001](docs/adr/0001-playwright-install-scope.md)：浏览器自动化用全局 `playwright-cli`，不在仓库内装 Playwright。
 - [ADR 0002](docs/adr/0002-pure-frontend-collection.md)：为什么采集放在浏览器里、为什么自己写 SQLite 解析器、为什么用快照 JSON 作为可携带真值。
+- [ADR 0003](docs/adr/0003-merge-workbuddy-into-one-dataset.md)：WorkBuddy 作为第二个数据源并入同一份 Dataset；合并必须先做三处归一化；积分因共用账户只能作为「账号消耗下限」。
