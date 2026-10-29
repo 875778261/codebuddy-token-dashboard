@@ -46,4 +46,6 @@ playwright-cli kill-all    # 强杀僵尸进程（close-all 无效时）
 
 ## 与自动化测试的边界
 
-本仓库**不装** `@playwright/test`，因为当前没有可被测的页面。等 dashboard 出现第一个可运行页面时，在项目内装它并把浏览器声明进 `playwright.config.ts`；**不要**全局装测试框架，也不要装 Playwright MCP（CLI + skills 更适合编码场景）。
+看板页面已经存在（`npm run dev`），但**仍不装** `@playwright/test`：当前的质量关口是数据正确性，用 `npm test`（vitest，纯函数）与 `npm run verify`（真实数据对 Python 真值对拍）覆盖；页面本身用全局 `playwright-cli` 做人工/脚本化验收（`open` + `run-code` + `screenshot`）。
+
+等需要稳定的交互回归（例如筛选、钻取、下载）时，再在项目内装 `@playwright/test` 并把浏览器声明进 `playwright.config.ts`；**不要**全局装测试框架，也不要装 Playwright MCP（CLI + skills 更适合编码场景）。

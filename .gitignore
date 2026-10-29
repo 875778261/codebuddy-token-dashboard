@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.tmp-*
+.playwright-cli/
+cb-bridge/
+codebuddy-usage-*.json
+*.local
+.DS_Store
