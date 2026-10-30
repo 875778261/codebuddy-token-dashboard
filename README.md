@@ -85,19 +85,39 @@ npx wrangler login      # 首次：OAuth 授权（或改用 CLOUDFLARE_API_TOKEN
 npm run deploy:manual   # build + wrangler deploy
 ```
 
-线上地址：<https://codebuddy-token-dashboard.875778261.workers.dev>
+### 线上地址
 
-### 国内镜像：GitHub Pages
+同一份 `dist` 产物，三个入口：
 
-<https://875778261.github.io/codebuddy-token-dashboard/>
+| 入口 | 地址 | 无代理可用 | 部署方式 |
+|---|---|---|---|
+| **Cloudflare Pages（无代理首选）** | <https://codebuddy-token-dashboard.pages.dev> | ✅ 实测 200 / 2~4s | `npm run deploy:pages` |
+| Cloudflare Workers | <https://codebuddy-token-dashboard.875778261.workers.dev> | ❌ | push `main` 自动，或 `npm run deploy:manual` |
+| GitHub Pages（备份镜像） | <https://875778261.github.io/codebuddy-token-dashboard/> | ⚠️ 实测 30s | push `main` 自动（`.github/workflows/pages.yml`） |
 
-同一份 `dist` 产物镜像到 GitHub Pages，由 `.github/workflows/pages.yml` 在 push `main` 时自动构建部署，与 Workers 的提交同源。两个地址内容一致（已用 normalized md5 比对过，差异仅 Windows `core.autocrlf` 造成的 22 个 CR 字节）。
+三处内容一致（Workers 与 GitHub Pages 两份曾用 normalized md5 比对，差异仅 Windows `core.autocrlf` 造成的 22 个 CR 字节）。纯本地使用仍可直接双击 `dist/index.html`。
 
-存在的理由：`*.workers.dev` 会被 DNS 投毒（解析到 `128.121.243.75` / `face:b00c`）**且** TLS SNI 被阻断，改 hosts 无效；`*.pages.dev` 同样只在 TLS 层被拦，换 Pages 也不能解决；`*.github.io` 相对可直连。本机 `curl` 不通 Workers 地址**不代表部署失败**。
+#### 网络事实（2026-10-30 实测，取代此前判断）
 
-代价是两套部署面：`main` 上一次 push 会同时触发 Workers Builds 和 Pages，两者互不依赖。纯本地使用仍可双击 `dist/index.html`。
+用**同一个 Cloudflare 边缘 IP `104.18.21.135`、只换 SNI** 做对照，结论是**阻断按 SNI 关键词，不按 IP**：
 
-> 若将来有了托管在 Cloudflare 的域名，可以改为在 `wrangler.jsonc` 加 `routes`（`{ "pattern": "dash.example.com", "custom_domain": true }`）直连，那时 Pages 镜像可以撤掉。
+| SNI | 同一 IP 下的握手结果 |
+|---|---|
+| `*.workers.dev` | ClientHello 后被 RST（curl exit 35） |
+| `*.pages.dev` | 成功（530 = Cloudflare「未知主机」页） |
+| 任意普通域名 | 成功（530） |
+
+- `*.workers.dev`：**DNS 投毒 + SNI 阻断**双重失效。投毒在链路层——`8.8.8.8:53` 与阿里 DoH `223.5.5.5` 都返回伪造地址（Facebook AS 段、`face:b00c` 的 IPv6、Teredo 前缀），**换 DNS 服务器无用**；改 hosts 也无用，因为指向真实边缘 IP 后 SNI 仍被 RST。
+- `*.pages.dev`：**不受影响**，是无代理下的可用入口。旧文档「换 Pages 也不能解决」是误判，源于一次 `pages.dev` exit 35 的偶发失败、未做交叉验证。
+- `*.github.io`：DNS 干净但极慢（30s 才 200），仅作备份；`github.com` 无代理下 IPv4 直接不通，`git push` 与 `gh` 需开代理。
+- `dash.cloudflare.com` / `api.cloudflare.com` / `registry.npmjs.org` 直连正常：**部署与依赖安装不依赖代理**。
+- 本机裸 `curl` 打不通 Workers 地址**不代表部署失败**。
+
+> SPA 深层路径回落：Workers 侧由 `wrangler.jsonc` 的 `not_found_handling` 负责，Pages 侧由 `public/_redirects` 负责。
+
+#### 备用：自定义域名
+
+若将来有托管在 Cloudflare 的域名，可在 `wrangler.jsonc` 加 `routes`（`{ "pattern": "dash.example.com", "custom_domain": true }`）直连；SNI 不含被拦关键词即可无代理访问，那时上面两套镜像都可以撤掉。
 
 
 ## 指标口径

@@ -1,7 +1,8 @@
 name: Deploy to GitHub Pages
 
-# 国内镜像：*.workers.dev 在部分网络被 DNS 投毒 + SNI 阻断，无法直连；
-# *.github.io 一般可直连，故把同一份 dist 镜像到 GitHub Pages。
+# 备份镜像：*.workers.dev 被 DNS 投毒 + SNI 阻断，无法直连。
+# *.github.io 能直连但极慢（实测 30s 才 200），只作备份；
+# 无代理首选入口是 Cloudflare Pages（*.pages.dev，SNI 未被拦）。
 # 主部署仍是 Cloudflare Workers Builds，本工作流只做镜像，不改变线上主入口。
 
 on:
