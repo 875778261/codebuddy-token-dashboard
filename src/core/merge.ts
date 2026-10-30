@@ -76,6 +76,9 @@ function mergeSourceInfo(list: SourceInfo[]): SourceInfo {
     convIndexCount += info.convIndexCount ?? 0
     sessionMetaCount += info.sessionMetaCount ?? 0
     elapsedMs += info.elapsedMs ?? 0
+    // 取各源最大值，语义只是「其中最新的一次扫描」。⚠️ 不要拿它当「本次刷新时间」：
+    // 只重扫一端时它会跳到当前时间，另一端看起来也变新了。逐源新鲜度请看
+    // bySource[source].info.scannedAt + core/freshness.ts 的 deriveFreshness()。
     if (info.scannedAt && info.scannedAt > scannedAt) scannedAt = info.scannedAt
     // 会话库只属于 CodeBuddy；不要拼接两源的名字
     if (info.sessionsDb) sessionsDb = info.sessionsDb

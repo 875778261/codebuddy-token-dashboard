@@ -6,6 +6,8 @@
   --ink-4: #93a0b4;
   --card: rgba(255, 255, 255, 0.76);
   --card-solid: rgba(255, 255, 255, 0.92);
+  /* 浮层专用：必须不透明，否则下面的表格会透上来（不加 blur，避免滚动时重算） */
+  --panel: #ffffff;
   --card-2: rgba(255, 255, 255, 0.5);
   --line: rgba(15, 23, 42, 0.08);
   --line-strong: rgba(15, 23, 42, 0.16);
@@ -32,6 +34,7 @@ body[data-theme='dark'] {
   --ink-4: #63708a;
   --card: rgba(19, 24, 34, 0.74);
   --card-solid: rgba(24, 30, 41, 0.94);
+  --panel: #161c27;
   --card-2: rgba(255, 255, 255, 0.04);
   --line: rgba(255, 255, 255, 0.075);
   --line-strong: rgba(255, 255, 255, 0.16);
@@ -1780,6 +1783,152 @@ table.req td.l {
   font-weight: 500;
   color: var(--ink-4);
   margin-top: 1px;
+}
+
+/* ---------- 导入路径 popover（顶栏「路径」） ---------- */
+
+/* Landing 里第二、三个路径块靠这个贴住第一个，别改回内联 style */
+.pathbox + .pathbox {
+  margin-top: 6px;
+}
+
+.path-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.btn.ghost.on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* 开合刻意不做动画：它挂在带 backdrop-filter 的顶栏里，任何每帧变化的属性
+   都会逼顶栏重新合成模糊层（见文末性能红线）。 */
+.path-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 80;
+  width: min(520px, calc(100vw - 24px));
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  text-align: left;
+}
+
+.path-pop-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.path-pop-head b {
+  font-size: 12px;
+}
+
+.path-pop-head span {
+  font-size: 10.5px;
+  color: var(--ink-4);
+}
+
+/* 面板里的行改两行网格：标签独占一行，长路径与「复制」永远同一行，不会把按钮挤下去 */
+.path-pop-list .pathbox {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 8px;
+  margin: 6px 0 0;
+  padding: 7px 8px 7px 11px;
+}
+
+.path-pop-list .pathbox .label {
+  grid-column: 1 / -1;
+}
+
+.path-pop-list .pathbox code {
+  font-size: 11.5px;
+}
+
+.path-pop-foot {
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: var(--ink-4);
+  line-height: 1.6;
+}
+
+/* 端对比空态里的路径块：占满整行，别缩成一小撮 */
+.src-empty .pathbox {
+  width: 100%;
+  margin: 2px 0 0;
+}
+
+/* ---------- 逐源新鲜度（本次刷新 / 缓存） ---------- */
+
+.brand-text .meta-fresh {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  white-space: normal;
+  overflow: visible;
+  margin-top: 3px;
+}
+
+.fresh-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card-2);
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--ink-3);
+}
+
+.fresh-chip b {
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.fresh-chip em {
+  font-style: normal;
+  color: var(--ink-4);
+}
+
+/* 「缓存 · 昨天 18:20」中间的间隔号，避免状态词和时间粘成一个词 */
+.fresh-chip b::before {
+  content: '·';
+  margin-right: 4px;
+  color: var(--ink-4);
+}
+
+.fresh-chip.fresh {
+  border-color: var(--accent);
+}
+
+.fresh-chip.fresh b,
+.fresh-chip.fresh em {
+  color: var(--accent);
+}
+
+.fresh-tag {
+  font-style: normal;
+  font-size: 9.5px;
+  line-height: 1.6;
+  padding: 0 5px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--ink-4);
+}
+
+.fresh-tag.fresh {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* ---------- 动效层：氛围背景 / 滚动进度 ---------- */

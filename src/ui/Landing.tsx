@@ -1,35 +1,8 @@
 import { useGSAP } from '@gsap/react'
 import { gsap } from 'gsap'
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
+import { IS_FILE, PathList } from './importPaths'
 import { EASE, MOTION_OK } from './motion'
-
-const IS_WIN = typeof navigator !== 'undefined' && /Win/i.test(navigator.userAgent)
-const IS_FILE = typeof location !== 'undefined' && location.protocol === 'file:'
-
-const DATA_PATH = IS_WIN ? '%LOCALAPPDATA%\\CodeBuddyExtension\\Data' : '~/Library/Application Support/CodeBuddyExtension/Data'
-const DB_PATH = IS_WIN ? '%APPDATA%\\CodeBuddy CN\\codebuddy-sessions.vscdb' : '~/Library/Application Support/CodeBuddy CN/codebuddy-sessions.vscdb'
-const WB_PATH = IS_WIN ? '%USERPROFILE%\\.workbuddy' : '~/.workbuddy'
-
-function CopyPath({ value }: { value: string }) {
-  const [done, setDone] = useState(false)
-  return (
-    <button
-      type="button"
-      className="btn ghost"
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value)
-          setDone(true)
-          setTimeout(() => setDone(false), 1400)
-        } catch {
-          /* 忽略 */
-        }
-      }}
-    >
-      {done ? '已复制' : '复制'}
-    </button>
-  )
-}
 
 export function Landing({
   onPickDirectory,
@@ -79,21 +52,7 @@ export function Landing({
           <b>解析与聚合只发生在你的浏览器里</b>，不上传、不离线缓存到任何服务器；关掉标签页就什么都没有。
         </p>
 
-        <div className="pathbox">
-          <span className="label">CodeBuddy</span>
-          <code>{DATA_PATH}</code>
-          <CopyPath value={DATA_PATH} />
-        </div>
-        <div className="pathbox" style={{ marginTop: 6 }}>
-          <span className="label">WorkBuddy</span>
-          <code>{WB_PATH}</code>
-          <CopyPath value={WB_PATH} />
-        </div>
-        <div className="pathbox" style={{ marginTop: 6 }}>
-          <span className="label">CodeBuddy 会话库（可选）</span>
-          <code>{DB_PATH}</code>
-          <CopyPath value={DB_PATH} />
-        </div>
+        <PathList />
         <p style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 4 }}>
           两端可以分两次拖：后拖的只更新自己那一端，不会重扫另一端。会话库只用于补 CodeBuddy 的标题与项目路径。
         </p>

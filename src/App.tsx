@@ -6,6 +6,7 @@ import { applySessionMeta, buildDataset } from './core/parse'
 import { mergeSlices, splitBySource } from './core/merge'
 import { parseWorkbuddy } from './core/workbuddyParse'
 import { parseSnapshot, serializeDataset, snapshotFileName } from './core/snapshot'
+import { deriveFreshness } from './core/freshness'
 import { SOURCE_META, SOURCE_ORDER, type Dataset, type SourceId } from './core/types'
 import {
   ensurePermission,
@@ -20,6 +21,8 @@ import { captureHandles, firstDirectoryHandle, scanDrop } from './platform/dropS
 import { idbDel, idbGet, idbSet, prefs } from './platform/idb'
 import { getPalette } from './ui/theme'
 import { Aurora } from './ui/Aurora'
+import { FreshnessChips } from './ui/FreshnessChips'
+import { SourcePathsButton } from './ui/importPaths'
 import { DropOverlay, Toast } from './ui/Overlays'
 import {
   isReducedMotion,
@@ -70,6 +73,11 @@ export default function App() {
   const [auto, setAuto] = useState(() => prefs.autoRefresh())
   /** 每个源各自持有目录句柄（ref 不能驱动 UI，所以另存一份可渲染状态） */
   const [hasDir, setHasDir] = useState<Partial<Record<SourceId, boolean>>>({})
+  /**
+   * 本会话内各源「真的被扫到」的时间戳。同一轮扫描里的多个源共用同一个值，
+   * 用于把「本次刷新」和「沿用缓存」区分开（判定逻辑见 core/freshness.ts）。
+   */
+  const [touched, setTouched] = useState<Partial<Record<SourceId, number>>>({})
 
   const dirRefs = useRef<DirMap>({})
   const slicesRef = useRef<SliceMap | null>(null)
@@ -141,6 +149,9 @@ export default function App() {
     return mergeSlices(list)
   }, [slices])
 
+  /** 逐源「本次刷新 / 缓存」+ 各自扫描时间；只看真实数据，示例数据不显示 */
+  const freshness = useMemo(() => deriveFreshness(slices ?? {}, touched), [slices, touched])
+
   const win = useMemo(
     () => (custom ? makeCustomWindow(custom.from, custom.to) : makeWindow(preset, dataset?.coverage.first)),
     [custom, preset, dataset],
@@ -175,6 +186,7 @@ export default function App() {
     dirRefs.current = {}
     persist(null)
     setHasDir({})
+    setTouched({})
     setRestored(false)
     setModelFocus(null)
     setStatus(null)
@@ -188,9 +200,13 @@ export default function App() {
     void idbDel('dir')
   }, [persist])
 
-  /** 一次扫描结果 → 逐源切片，未命中的源保持原样（先 CB 后 WB 不必重扫） */
+  /**
+   * 一次扫描结果 → 逐源切片，未命中的源保持原样（先 CB 后 WB 不必重扫）。
+   * `roundAt` 是「这一轮扫描的开始时间」：同一轮里逐源调用时传同一个值，
+   * 否则一轮全量重扫会被记成两个不同轮次，先扫完的那一端反被判成缓存。
+   */
   const ingest = useCallback(
-    async (res: ScanResult) => {
+    async (res: ScanResult, roundAt: number = Date.now()) => {
       const base = slicesRef.current ?? {}
       const next: SliceMap = { ...base }
       const changed: SourceId[] = []
@@ -246,6 +262,11 @@ export default function App() {
 
       scanRef.current = res
       persist(next)
+      setTouched((prev) => {
+        const next2 = { ...prev }
+        for (const source of changed) next2[source] = roundAt
+        return next2
+      })
       setStatus({ text: `已载入 ${[...new Set(changed)].map((s) => SOURCE_META[s].label).join(' + ')}：${notes.join(' · ')}` })
     },
     [persist],
@@ -313,6 +334,8 @@ export default function App() {
         return
       }
       setBusy(true)
+      // 同一轮内的所有源共用一个时间戳：否则先扫完的一端会被判成「缓存」
+      const roundAt = Date.now()
       try {
         for (const source of targets) {
           const dir = dirRefs.current[source]!
@@ -325,7 +348,7 @@ export default function App() {
           const res = await scanDirectoryHandle(dir, (stage, done, total) =>
             setStatus({ text: `${SOURCE_META[source].label} · ${total ? `${stage} ${done}/${total}` : stage}` }),
           )
-          await ingest(res)
+          await ingest(res, roundAt)
         }
       } catch (err) {
         setStatus({ text: `重新扫描失败：${(err as Error)?.message ?? err}`, error: true })
@@ -387,6 +410,8 @@ export default function App() {
           const ds = parseSnapshot(await res.jsonFiles[0].text())
           const split = splitBySource(ds)
           persist({ ...(slicesRef.current ?? {}), ...split })
+          // 快照里的时间是它自己生成时的，不是本会话扫的 → 一律按缓存展示
+          setTouched({})
           setStatus({ text: `已导入快照：${Object.keys(split).map((s) => SOURCE_META[s as SourceId].label).join(' + ')}` })
           return
         }
@@ -480,6 +505,7 @@ export default function App() {
         if (!ds.sessions.length) throw new Error('快照里没有会话')
         const split = splitBySource(ds)
         persist({ ...(slicesRef.current ?? {}), ...split })
+        setTouched({})
         setStatus({ text: `已导入快照：${Object.keys(split).map((s) => SOURCE_META[s as SourceId].label).join(' + ')}` })
       } catch (err) {
         setStatus({ text: `导入失败：${(err as Error)?.message ?? err}`, error: true })
@@ -501,6 +527,7 @@ export default function App() {
 
   const handleDemo = useCallback(() => {
     scanRef.current = null
+    setTouched({})
     persist(splitBySource(buildDemoDataset()))
   }, [persist])
 
@@ -509,12 +536,13 @@ export default function App() {
     prefs.setAutoRefresh(auto)
     if (!auto || !dataset) return
     const timer = window.setInterval(async () => {
+      const roundAt = Date.now()
       for (const source of SOURCE_ORDER) {
         const dir = dirRefs.current[source]
         if (!dir || !(await ensurePermission(dir))) continue
         try {
           const res = await scanDirectoryHandle(dir)
-          await ingest(res)
+          await ingest(res, roundAt)
         } catch {
           /* 静默失败，不打扰 */
         }
@@ -581,9 +609,10 @@ export default function App() {
               <h1>Buddy 用量看板</h1>
               <div className="meta">
                 {dataset && agg
-                  ? `${loadedSources.map((s) => SOURCE_META[s].label).join(' + ') || '无数据'} · ${fmtInt(agg.totals.requests)} 请求 · ${fmtTokens(agg.totals.total)} token · 扫描 ${dataset.sources.elapsedMs} ms`
+                  ? `${loadedSources.map((s) => SOURCE_META[s].label).join(' + ') || '无数据'} · ${fmtInt(agg.totals.requests)} 请求 · ${fmtTokens(agg.totals.total)} token`
                   : 'CodeBuddy + WorkBuddy · 纯前端 · 数据不出本机'}
               </div>
+              {dataset && agg && !dataset.isDemo ? <FreshnessChips freshness={freshness} /> : null}
             </div>
           </div>
 
@@ -644,6 +673,7 @@ export default function App() {
               <button type="button" className="btn ghost" onClick={() => void handlePickDirectory()} disabled={busy} title="选择或新增一个数据目录（自动识别 CodeBuddy / WorkBuddy）">
                 目录
               </button>
+              <SourcePathsButton />
               <button type="button" className="btn ghost" onClick={handleExport} title="导出快照 JSON">
                 导出
               </button>
@@ -754,7 +784,7 @@ export default function App() {
 
             <div className="grid two right-wide">
               <DistCard agg={agg} palette={palette} />
-              <HealthCard dataset={dataset} agg={agg} onExport={handleExport} />
+              <HealthCard dataset={dataset} agg={agg} freshness={freshness} onExport={handleExport} />
             </div>
           </div>
         )}

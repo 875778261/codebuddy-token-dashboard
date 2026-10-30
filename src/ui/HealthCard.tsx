@@ -1,5 +1,6 @@
-import type { Dataset } from '../core/types'
+import type { Dataset, SourceId } from '../core/types'
 import type { Aggregates } from '../core/aggregate'
+import type { SourceFreshness } from '../core/freshness'
 import { SOURCE_META, SOURCE_ORDER } from '../core/types'
 import { dayList, fmtDateTime, fmtInt, fmtPct } from '../core/format'
 import { CoverageStrip } from './widgets'
@@ -19,7 +20,17 @@ function Check({ label, value, sub, bad, warn }: { label: string; value: string;
   )
 }
 
-export function HealthCard({ dataset, agg, onExport }: { dataset: Dataset; agg: Aggregates; onExport: () => void }) {
+export function HealthCard({
+  dataset,
+  agg,
+  freshness,
+  onExport,
+}: {
+  dataset: Dataset
+  agg: Aggregates
+  freshness: Partial<Record<SourceId, SourceFreshness>>
+  onExport: () => void
+}) {
   const sc = dataset.selfCheck
   const cov = dataset.coverage
   const days = cov.first && cov.last ? dayList(new Date(`${cov.first}T00:00:00`).getTime(), new Date(`${cov.last}T00:00:00`).getTime()) : []
@@ -97,11 +108,14 @@ export function HealthCard({ dataset, agg, onExport }: { dataset: Dataset; agg: 
               const summary = dataset.bySource[s]!
               const ssc = summary.selfCheck
               const fail = ssc.inputEqCachePlusMiss.fail + ssc.totalEqInputPlusOutput.fail
+              const scannedTs = Date.parse(summary.info.scannedAt)
+              const fresh = freshness[s]
               return (
                 <div className="src-block" key={s}>
                   <div className="src-title">
                     <span className={`src-dot ${s}`} />
                     <b>{SOURCE_META[s].label}</b>
+                    {fresh ? <em className={`fresh-tag${fresh.fresh ? ' fresh' : ''}`}>{fresh.fresh ? '本次刷新' : '缓存'}</em> : null}
                     <span>
                       {fmtInt(ssc.requestsWithUsage)} 请求 · {fmtInt(summary.coverage.daysWithData)} 天
                     </span>
@@ -109,6 +123,7 @@ export function HealthCard({ dataset, agg, onExport }: { dataset: Dataset; agg: 
                   <div className="src-line">
                     {fmtInt(summary.info.projectCount)} 项目 · {fmtInt(summary.info.convIndexCount)} 索引 · {fmtInt(summary.info.sessionMetaCount)} 元数据 ·{' '}
                     {summary.info.elapsedMs} ms
+                    {Number.isFinite(scannedTs) ? ` · 扫描于 ${fmtDateTime(scannedTs)}` : ''}
                   </div>
                   <div className="src-line ellipsis" title={summary.info.historyRoots.join('\n')}>
                     {summary.info.historyRoots[0] ?? '未记录数据根'}

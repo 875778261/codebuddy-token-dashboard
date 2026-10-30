@@ -1,6 +1,7 @@
 import type { Aggregates } from '../core/aggregate'
 import { fmtCredit, fmtInt, fmtPct, fmtTokens } from '../core/format'
 import { SOURCE_META, SOURCE_ORDER, type SourceId } from '../core/types'
+import { PathBox, importPathOf } from './importPaths'
 import type { Palette } from './theme'
 
 interface Row {
@@ -110,6 +111,8 @@ export function SourceCompareCard({
               ? `${SOURCE_META[only].label} 的统计已经在上面了。再把 ${SOURCE_META[missing].label} 的数据目录加进来，这块会显示两端在量、效率与使用节奏上的差异；已载入的一端不会被重扫。`
               : '载入 CodeBuddy 或 WorkBuddy 任一端即可开始；两端都载入后自动出现端对比。'}
           </span>
+          {/* 最需要路径的就是这一刻：把缺失那一端的入参路径直接摆出来，不用回初始页找 */}
+          {only ? <PathBox item={importPathOf(missing)} /> : null}
           <button type="button" className="btn" onClick={onAdd} disabled={busy}>
             添加数据目录
           </button>
