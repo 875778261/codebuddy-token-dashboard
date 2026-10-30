@@ -19,6 +19,16 @@ import {
 import { captureHandles, firstDirectoryHandle, scanDrop } from './platform/dropScan'
 import { idbDel, idbGet, idbSet, prefs } from './platform/idb'
 import { getPalette } from './ui/theme'
+import { Aurora } from './ui/Aurora'
+import { DropOverlay, Toast } from './ui/Overlays'
+import {
+  isReducedMotion,
+  useDashboardReveal,
+  useScrollProgress,
+  useScrollRefresh,
+  useThemeIconFlip,
+  useTopbarIntro,
+} from './ui/motion'
 import { Landing } from './ui/Landing'
 import { KpiRow } from './ui/KpiRow'
 import { TrendCard, type TrendMode } from './ui/TrendCard'
@@ -67,6 +77,12 @@ export default function App() {
   const scanRef = useRef<ScanResult | null>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const snapshotInputRef = useRef<HTMLInputElement>(null)
+  /** 动效锚点：顶栏 / 仪表盘容器 / 顶部进度条 / 主题按钮 / 品牌标记 */
+  const topbarRef = useRef<HTMLElement>(null)
+  const brandRef = useRef<HTMLDivElement>(null)
+  const stackRef = useRef<HTMLDivElement>(null)
+  const progressRef = useRef<HTMLDivElement>(null)
+  const themeIconRef = useRef<HTMLButtonElement>(null)
 
   const palette = useMemo(() => getPalette(theme === 'dark'), [theme])
 
@@ -529,15 +545,40 @@ export default function App() {
 
   const loadedSources = dataset ? (Object.keys(dataset.bySource) as SourceId[]) : []
   const canRescan = SOURCE_ORDER.some((s) => hasDir[s])
+  const showDashboard = Boolean(dataset && agg)
+
+  // 动效：顶栏入场、滚动进度、卡片分批浮现、主题按钮翻身
+  useTopbarIntro(topbarRef)
+  useScrollProgress(progressRef)
+  useDashboardReveal(stackRef, showDashboard)
+  useThemeIconFlip(themeIconRef, theme)
+  // 换窗口后卡片高度会变，触发器位置要重算
+  useScrollRefresh([agg, preset, custom])
+
+  // 数据载入/刷新完成时给 logo 扫一道高光：一次性事件，不做常驻循环（常驻多占 ~5 点 GPU）
+  useEffect(() => {
+    const el = brandRef.current
+    if (!el || !dataset || isReducedMotion()) return
+    el.classList.remove('sheen')
+    void el.offsetWidth
+    el.classList.add('sheen')
+    const done = () => el.classList.remove('sheen')
+    el.addEventListener('animationend', done, { once: true })
+    return () => el.removeEventListener('animationend', done)
+  }, [dataset])
 
   return (
     <>
+      <Aurora />
+      <div className="scroll-progress" ref={progressRef} aria-hidden="true" />
       <div className="shell">
-        <header className="topbar">
+        <header className="topbar" ref={topbarRef}>
           <div className="brand">
-            <div className="brand-mark">AI</div>
+            <div className="brand-mark" ref={brandRef} aria-hidden="true">
+              BB
+            </div>
             <div className="brand-text">
-              <h1>本机 AI 用量看板</h1>
+              <h1>Buddy 用量看板</h1>
               <div className="meta">
                 {dataset && agg
                   ? `${loadedSources.map((s) => SOURCE_META[s].label).join(' + ') || '无数据'} · ${fmtInt(agg.totals.requests)} 请求 · ${fmtTokens(agg.totals.total)} token · 扫描 ${dataset.sources.elapsedMs} ms`
@@ -618,13 +659,27 @@ export default function App() {
               >
                 自动
               </button>
-              <button type="button" className="btn icon ghost" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="切换明暗主题" aria-label="切换明暗主题">
+              <button
+                ref={themeIconRef}
+                type="button"
+                className="btn icon ghost"
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                title="切换明暗主题"
+                aria-label="切换明暗主题"
+              >
                 {theme === 'dark' ? '☾' : '☀'}
               </button>
             </div>
           ) : (
             <div className="controls">
-              <button type="button" className="btn icon ghost" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="切换明暗主题" aria-label="切换明暗主题">
+              <button
+                ref={themeIconRef}
+                type="button"
+                className="btn icon ghost"
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                title="切换明暗主题"
+                aria-label="切换明暗主题"
+              >
                 {theme === 'dark' ? '☾' : '☀'}
               </button>
             </div>
@@ -642,7 +697,7 @@ export default function App() {
             supportsDirectory={supportsDirectoryPicker()}
           />
         ) : (
-          <div className="stack">
+          <div className="stack" ref={stackRef}>
             {dataset.isDemo ? (
               <div className="banner info">
                 当前是<b>示例数据</b>（合成的双端用量，不含任何真实路径），仅用于预览界面，不会写入本地缓存。
@@ -705,29 +760,9 @@ export default function App() {
         )}
       </div>
 
-      {dataset && status && !status.error ? (
-        <div className="toast-stack" aria-live="polite">
-          <div className="toast">
-            {busy ? <span className="spin" /> : null}
-            <span>{status.text}</span>
-          </div>
-        </div>
-      ) : null}
+      {dataset && status && !status.error ? <Toast text={status.text} busy={busy} /> : null}
 
-      {dragging ? (
-        <div className="drop-overlay">
-          <div className="drop-card">
-            <div className="drop-icon">↓</div>
-            <b>松手即读取</b>
-            <span>
-              支持 <code>CodeBuddyExtension\Data</code>、<code>~/.workbuddy</code>（或其 <code>projects</code>）、
-              <code>codebuddy-sessions.vscdb</code>，或快照 JSON
-              <br />
-              两端可以分两次拖：后拖的只更新自己那一端
-            </span>
-          </div>
-        </div>
-      ) : null}
+      {dragging ? <DropOverlay /> : null}
 
       <footer className="foot">
         <span>

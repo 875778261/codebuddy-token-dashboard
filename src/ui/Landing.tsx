@@ -1,4 +1,7 @@
-import { useState } from 'react'
+import { useGSAP } from '@gsap/react'
+import { gsap } from 'gsap'
+import { useRef, useState } from 'react'
+import { EASE, MOTION_OK } from './motion'
 
 const IS_WIN = typeof navigator !== 'undefined' && /Win/i.test(navigator.userAgent)
 const IS_FILE = typeof location !== 'undefined' && location.protocol === 'file:'
@@ -45,8 +48,27 @@ export function Landing({
   busy: boolean
   supportsDirectory: boolean
 }) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useGSAP(
+    () => {
+      const root = ref.current
+      if (!root) return
+      const hero = root.querySelector('.hero')
+      const blocks = root.querySelectorAll('.pathbox, .dropzone, .hint, .feature')
+      const mm = gsap.matchMedia()
+      mm.add(MOTION_OK, () => {
+        if (hero) gsap.from(hero, { autoAlpha: 0, y: 22, duration: 0.62, ease: EASE })
+        if (blocks.length) {
+          gsap.from(blocks, { autoAlpha: 0, y: 14, duration: 0.5, ease: EASE, stagger: 0.05, delay: 0.1 })
+        }
+      })
+    },
+    { scope: ref },
+  )
+
   return (
-    <div className="landing">
+    <div className="landing" ref={ref}>
       <section className="hero">
         <h2>本机 AI 用量总账，全部留在本机</h2>
         <p>

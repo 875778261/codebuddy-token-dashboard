@@ -1,5 +1,63 @@
-import { useId } from 'react'
+import { useGSAP } from '@gsap/react'
+import { gsap } from 'gsap'
+import { useId, useRef } from 'react'
 import { fmtTokens } from '../core/format'
+import { isReducedMotion } from './motion'
+
+/**
+ * 数字滚动：值变化时从上一次的值补间到新值。
+ * 只改文本，不产生布局动画；减少动效偏好下直接落到终值。
+ */
+export function CountUp({
+  value,
+  format,
+  duration = 1.1,
+}: {
+  value: number
+  format: (v: number) => string
+  duration?: number
+}) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const from = useRef(0)
+  const fmt = useRef(format)
+  fmt.current = format
+
+  useGSAP(
+    () => {
+      const el = ref.current
+      if (!el) return
+      const target = Number.isFinite(value) ? value : 0
+
+      if (isReducedMotion()) {
+        el.textContent = fmt.current(target)
+        from.current = target
+        return
+      }
+
+      const proxy = { v: from.current }
+      el.textContent = fmt.current(proxy.v)
+      const tween = gsap.to(proxy, {
+        v: target,
+        duration,
+        ease: 'power2.out',
+        onUpdate: () => {
+          el.textContent = fmt.current(proxy.v)
+        },
+        onComplete: () => {
+          from.current = target
+        },
+      })
+
+      return () => {
+        tween.kill()
+        from.current = proxy.v
+      }
+    },
+    { dependencies: [value], scope: ref },
+  )
+
+  return <span ref={ref}>{fmt.current(Number.isFinite(value) ? value : 0)}</span>
+}
 
 export function Sparkline({ values, color, height = 22 }: { values: number[]; color: string; height?: number }) {
   const id = useId().replace(/:/g, '')

@@ -1,9 +1,9 @@
 import type { Aggregates } from '../core/aggregate'
 import { fmtCredit, fmtInt, fmtPct, fmtTokens } from '../core/format'
 import { SOURCE_META, SOURCE_ORDER } from '../core/types'
-import { Delta } from './widgets'
+import { CountUp, Delta } from './widgets'
 
-function Kpi({ label, value, unit, sub, delta }: { label: string; value: string; unit?: string; sub: React.ReactNode; delta?: React.ReactNode }) {
+function Kpi({ label, value, unit, sub, delta }: { label: string; value: React.ReactNode; unit?: string; sub: React.ReactNode; delta?: React.ReactNode }) {
   return (
     <div className="kpi">
       <div className="k">
@@ -48,7 +48,7 @@ export function KpiRow({ agg }: { agg: Aggregates }) {
     <div className="grid kpis">
       <Kpi
         label="总 Token"
-        value={fmtTokens(t.total)}
+        value={<CountUp value={t.total} format={fmtTokens} />}
         sub={
           <>
             输入 {fmtTokens(t.input)} · 输出 {fmtTokens(t.output)}
@@ -59,12 +59,12 @@ export function KpiRow({ agg }: { agg: Aggregates }) {
       />
       <Kpi
         label="缓存命中率"
-        value={fmtPct(t.cacheHitRate)}
+        value={<CountUp value={t.cacheHitRate} format={(v) => fmtPct(v, 1)} />}
         sub={`命中 ${fmtTokens(t.cache)} · 未命中 ${fmtTokens(t.cacheMiss)}`}
       />
       <Kpi
         label="已知积分"
-        value={fmtCredit(t.credit)}
+        value={<CountUp value={t.credit} format={fmtCredit} />}
         sub={
           <>
             覆盖 {fmtPct(creditCoverage, 0)} 请求 · 每百万 token ≈ {creditPerM.toFixed(1)}
@@ -74,7 +74,7 @@ export function KpiRow({ agg }: { agg: Aggregates }) {
       />
       <Kpi
         label="请求数"
-        value={fmtInt(t.requests)}
+        value={<CountUp value={t.requests} format={fmtInt} />}
         sub={
           hasModes
             ? `单次均值 ${fmtTokens(t.avgPerRequest)} · craft ${fmtInt(agg.typeSplit.craft)} / ask ${fmtInt(agg.typeSplit.ask)}`
@@ -84,7 +84,7 @@ export function KpiRow({ agg }: { agg: Aggregates }) {
       />
       <Kpi
         label="会话数"
-        value={fmtInt(t.sessions)}
+        value={<CountUp value={t.sessions} format={fmtInt} />}
         sub={
           t.subAgentSessions
             ? `主会话 ${fmtInt(t.mainSessions)} · subagent ${fmtInt(t.subAgentSessions)} · 每主会话 ${avgSessions.toFixed(1)} 次请求`
@@ -93,7 +93,7 @@ export function KpiRow({ agg }: { agg: Aggregates }) {
       />
       <Kpi
         label="活跃天数"
-        value={String(t.activeDays)}
+        value={<CountUp value={t.activeDays} format={(v) => String(Math.round(v))} duration={0.8} />}
         unit={`/ ${agg.days.length} 天`}
         sub={`窗口覆盖率 ${fmtPct(coverage, 0)} · 有数据日均 ${fmtTokens(t.avgPerActiveDay)}`}
       />

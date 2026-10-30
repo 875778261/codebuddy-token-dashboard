@@ -1,4 +1,4 @@
-# codebuddy-token-dashboard
+# Buddy 用量看板
 
 本机 AI 用量的本地看板：**纯前端、零上传**。支持只载入 CodeBuddy、只载入 WorkBuddy、或两端都载入（合并成一份总账 + 端对比）。
 

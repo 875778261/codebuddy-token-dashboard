@@ -69,6 +69,7 @@ body {
   padding-bottom: 56px;
 }
 
+/* 底色渐变：不加 blur —— 渐变本身就是软的，一层全屏滤镜只是白烧 GPU */
 body::before {
   content: '';
   position: fixed;
@@ -79,7 +80,6 @@ body::before {
     radial-gradient(38% 38% at 12% 8%, rgba(79, 93, 240, 0.16), transparent 60%),
     radial-gradient(34% 34% at 88% 4%, rgba(13, 157, 146, 0.14), transparent 60%),
     radial-gradient(42% 42% at 76% 88%, rgba(124, 79, 240, 0.12), transparent 60%);
-  filter: blur(28px);
 }
 
 body[data-theme='dark']::before {
@@ -161,10 +161,37 @@ button {
   place-items: center;
   color: #fff;
   font-weight: 800;
-  font-size: 15px;
-  letter-spacing: -0.5px;
+  font-size: 13.5px;
+  letter-spacing: 0.2px;
   box-shadow: 0 8px 20px -10px rgba(79, 93, 240, 0.9);
   flex: none;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 高光扫过：只在数据载入时演一次（App 里加 .sheen），不做常驻循环。
+   常驻版本实测让 msedge 进程多占约 5 个点 GPU——顶栏带 backdrop-filter，
+   里面任何一帧变化都会逼它重新合成，代价与 logo 大小无关。 */
+.brand-mark::after {
+  content: '';
+  position: absolute;
+  inset: -60%;
+  background: linear-gradient(115deg, transparent 42%, rgba(255, 255, 255, 0.6) 50%, transparent 58%);
+  transform: translateX(-130%);
+  pointer-events: none;
+}
+
+.brand-mark.sheen::after {
+  animation: mark-sheen 1.15s ease-out 1;
+}
+
+@keyframes mark-sheen {
+  from {
+    transform: translateX(-130%);
+  }
+  to {
+    transform: translateX(130%);
+  }
 }
 
 .brand-text {
@@ -498,14 +525,21 @@ button {
   border-radius: var(--radius);
   background: var(--card);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(20px) saturate(150%);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  /* 不加 backdrop-filter：卡片面积大，滚动时背后的内容每帧都在变，
+     模糊就要每帧重算，直接吃掉主线程的出帧能力——表现就是「惯性滑动时动画卡住」。
+     实测（1440×900 / 120Hz / 一次惯性上滑，采样 3.5s）：
+       有模糊     → 298 帧，最大帧间隔 150ms，26 帧超 24ms
+       模糊降到 8px → 376 帧，最大间隔 25ms，10 帧超 24ms
+       去掉模糊   → 421 帧（满帧），最大间隔 9ms，0 帧超 24ms
+     卡片背后是柔和的径向渐变，20px 模糊与不模糊肉眼几乎无差别；
+     顶栏（sticky，卡片会从它下面滑过）保留模糊，实测几乎不花钱。 */
   padding: 16px 18px 14px;
   min-width: 0;
   display: flex;
   flex-direction: column;
   height: 100%;
-  transition: box-shadow 0.25s ease, transform 0.25s ease;
+  /* transform 交给 GSAP，CSS 只保留阴影过渡，避免两边抢同一个属性 */
+  transition: box-shadow 0.25s ease;
 }
 
 /* 卡片内部三段式：head 定高 / body 吸收剩余高度 / foot 贴底 */
@@ -584,8 +618,9 @@ button {
   background: var(--card);
   padding: 13px 15px 12px;
   box-shadow: var(--shadow);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  /* 不加 backdrop-filter：这几张卡内部有数字滚动（每帧改文本），
+     带背景模糊的容器只要内部有一帧变化就要整块重新合成（实测 6 张卡 / 120Hz
+     静置可达 55%+ GPU）。卡片盖在柔和渐变上，16px 模糊肉眼几乎看不出差别。 */
   position: relative;
   overflow: hidden;
 }
@@ -1255,18 +1290,10 @@ table.req td.l {
   -webkit-backdrop-filter: blur(18px) saturate(160%);
   font-size: 12px;
   color: var(--ink-2);
-  animation: toast-in 0.18s ease;
 }
 
 .toast .spin {
   color: var(--accent);
-}
-
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
 }
 
 /* ---------- distribution ---------- */
@@ -1347,13 +1374,6 @@ table.req td.l {
   background: color-mix(in srgb, var(--bg) 72%, transparent);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  animation: fade 0.16s ease;
-}
-
-@keyframes fade {
-  from {
-    opacity: 0;
-  }
 }
 
 .drop-card {
@@ -1760,4 +1780,87 @@ table.req td.l {
   font-weight: 500;
   color: var(--ink-4);
   margin-top: 1px;
+}
+
+/* ---------- 动效层：氛围背景 / 滚动进度 ---------- */
+
+/* 三团极光：静止。只用径向渐变，不加 blur（渐变本身就是软的）。
+   ⚠️ 不要给它们加任何常驻动画（GSAP 补间、CSS keyframes 一样贵）。
+   实测页面静置时 GPU 3D 占用，按进程拆分（1440×900 / 120Hz / Windows）：
+     有漂移（GSAP）      → msedge 54~60%
+     有漂移（CSS 合成动画）→ msedge 48~54%
+     静止                → msedge 6%
+   原因：三团铺满半个视口，只要有一帧变化，下面 14 张 backdrop-filter 卡片的背景
+   采样就要全部作废重算，等于整屏每帧重合成。动效留在入场/交互里，不要留在背景。 */
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+
+.aurora .blob {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  opacity: 0.3;
+}
+
+.aurora .b1 {
+  width: 52vmax;
+  height: 52vmax;
+  left: -18vmax;
+  top: -22vmax;
+  background: radial-gradient(circle at 50% 50%, rgba(79, 93, 240, 0.5), rgba(79, 93, 240, 0) 62%);
+}
+
+.aurora .b2 {
+  width: 42vmax;
+  height: 42vmax;
+  right: -16vmax;
+  top: -12vmax;
+  background: radial-gradient(circle at 50% 50%, rgba(13, 157, 146, 0.42), rgba(13, 157, 146, 0) 62%);
+}
+
+.aurora .b3 {
+  width: 50vmax;
+  height: 50vmax;
+  right: 4vmax;
+  bottom: -28vmax;
+  background: radial-gradient(circle at 50% 50%, rgba(124, 79, 240, 0.38), rgba(124, 79, 240, 0) 64%);
+}
+
+
+
+body[data-theme='dark'] .aurora .blob {
+  opacity: 0.38;
+}
+
+/* 顶部滚动进度：1 像素以内的高度差，只做 scaleX */
+.scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 300;
+  pointer-events: none;
+  background: linear-gradient(90deg, var(--accent), var(--violet) 55%, var(--teal));
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  will-change: transform;
+}
+
+/* 迷你折线描边动画结束后保持实线（GSAP 会留下 dash 内联值，这里兜底奇数长度破折） */
+.sparkline path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-mark.sheen::after {
+    animation: none;
+  }
 }
