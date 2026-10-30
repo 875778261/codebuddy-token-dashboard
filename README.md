@@ -87,9 +87,17 @@ npm run deploy:manual   # build + wrangler deploy
 
 线上地址：<https://codebuddy-token-dashboard.875778261.workers.dev>
 
-> `*.workers.dev` 在部分网络下会被 DNS 污染（解析到 `128.121.243.75` / `face:b00c` 这类地址）导致连接超时。实测这类网络的 TLS SNI 也一并被阻断，改 hosts 或改用 `pages.dev` 都无效。此时本机 `curl` 不通**不代表部署失败**，用外部通道验证。纯前端产物在本地双击 `dist/index.html` 即可使用，不依赖线上地址。
->
-> 绑定自有域名：在 `wrangler.jsonc` 里加 `routes`（`{ "pattern": "dash.example.com", "custom_domain": true }`），域名须已接入同一 Cloudflare 账号。
+### 国内镜像：GitHub Pages
+
+<https://875778261.github.io/codebuddy-token-dashboard/>
+
+同一份 `dist` 产物镜像到 GitHub Pages，由 `.github/workflows/pages.yml` 在 push `main` 时自动构建部署，与 Workers 的提交同源。两个地址内容一致（已用 normalized md5 比对过，差异仅 Windows `core.autocrlf` 造成的 22 个 CR 字节）。
+
+存在的理由：`*.workers.dev` 会被 DNS 投毒（解析到 `128.121.243.75` / `face:b00c`）**且** TLS SNI 被阻断，改 hosts 无效；`*.pages.dev` 同样只在 TLS 层被拦，换 Pages 也不能解决；`*.github.io` 相对可直连。本机 `curl` 不通 Workers 地址**不代表部署失败**。
+
+代价是两套部署面：`main` 上一次 push 会同时触发 Workers Builds 和 Pages，两者互不依赖。纯本地使用仍可双击 `dist/index.html`。
+
+> 若将来有了托管在 Cloudflare 的域名，可以改为在 `wrangler.jsonc` 加 `routes`（`{ "pattern": "dash.example.com", "custom_domain": true }`）直连，那时 Pages 镜像可以撤掉。
 
 
 ## 指标口径
