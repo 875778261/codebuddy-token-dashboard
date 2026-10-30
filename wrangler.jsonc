@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "codebuddy-token-dashboard",
+  "compatibility_date": "2026-10-01",
+  // 纯静态：vite-plugin-singlefile 只产出 dist/index.html，全部逻辑在浏览器里跑。
+  // 用 Workers 静态资源（而非 Pages）托管，后续要加边缘函数可直接扩。
+  "assets": {
+    "directory": "./dist",
+    // 单页应用：任何未命中的路径都回落到 index.html
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

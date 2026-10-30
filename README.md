@@ -44,6 +44,54 @@ npm run collect      # 读本机两份数据 → 一份快照 JSON（页面里�
 
 选完的数据会缓存在 IndexedDB，下次打开直接出图。
 
+## 部署
+
+产物是单个 `dist/index.html`，托管在 **Cloudflare Workers 静态资源**（`wrangler.jsonc` 里 `assets.directory = ./dist`，`not_found_handling = single-page-application`）。
+
+### 主路径：push 即部署
+
+线上以 **Workers Builds（Git 集成）** 为唯一部署入口：Cloudflare 拉 `main` 构建并发布，本地不再手动 deploy，避免两个入口互相覆盖版本历史。
+
+```
+Dashboard → Workers & Pages → codebuddy-token-dashboard
+         → Settings → Builds → Connect → 选 875778261/codebuddy-token-dashboard
+```
+
+| 构建设置 | 值 |
+|---|---|
+| Production branch | `main` |
+| Build command | `npm run build` |
+| Deploy command | `npx wrangler deploy` |
+
+免费计划为 3000 构建分钟/月、并发 1、单次超时 20 分钟。非 `main` 分支自动触发 Preview 构建，只出预览 URL，不切线上。
+
+硬性约束（踩过就构建失败）：
+
+- Dashboard 里的 Worker 名称必须与 `wrangler.jsonc` 的 `name` 完全一致（当前均为 `codebuddy-token-dashboard`）；
+- `wrangler.jsonc` 必须在仓库里，否则 Cloudflare 的 autoconfig 会先开一个 PR 补配置。
+
+### 本地只需校验
+
+```bash
+npm run deploy:dry      # build + 干跑，校验配置和产物，不上传、不切线上
+```
+
+### 应急手动部署
+
+Git 集成不可用时才用，用完记得让 `main` 与线上重新对齐，否则下一次 push 会覆盖掉这次手动版本：
+
+```bash
+npx wrangler login      # 首次：OAuth 授权（或改用 CLOUDFLARE_API_TOKEN）
+npm run deploy:manual   # build + wrangler deploy
+```
+
+线上地址：<https://codebuddy-token-dashboard.875778261.workers.dev>
+
+> `*.workers.dev` 在部分网络下会被 DNS 污染（解析到 `128.121.243.75` / `face:b00c` 这类地址）导致连接超时。实测这类网络的 TLS SNI 也一并被阻断，改 hosts 或改用 `pages.dev` 都无效。此时本机 `curl` 不通**不代表部署失败**，用外部通道验证。纯前端产物在本地双击 `dist/index.html` 即可使用，不依赖线上地址。
+>
+> 绑定自有域名：在 `wrangler.jsonc` 里加 `routes`（`{ "pattern": "dash.example.com", "custom_domain": true }`），域名须已接入同一 Cloudflare 账号。
+
+
 ## 指标口径
 
 | 指标 | 口径 | 数据来源 |

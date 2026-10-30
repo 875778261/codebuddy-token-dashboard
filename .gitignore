@@ -2,6 +2,7 @@ node_modules/
 dist/
 .tmp-*
 .playwright-cli/
+.wrangler/
 cb-bridge/
 codebuddy-usage-*.json
 *.local
