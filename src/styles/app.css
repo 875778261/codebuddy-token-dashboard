@@ -155,46 +155,40 @@ button {
   min-width: 0;
 }
 
+/* 品牌标记：透明背景的原始 logo，不再画色块。
+   果冻动效由 GSAP 写 transform（见 motion.ts 的 useJellyMark），这里不留 transition：
+   顶栏带 backdrop-filter，任何一帧变化都会逼它重新合成模糊层，所以只允许 transform/opacity。 */
 .brand-mark {
   width: 34px;
   height: 34px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #4f5df0, #7c4ff0 55%, #0d9d92);
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-weight: 800;
-  font-size: 13.5px;
-  letter-spacing: 0.2px;
-  box-shadow: 0 8px 20px -10px rgba(79, 93, 240, 0.9);
+  display: block;
   flex: none;
-  position: relative;
-  overflow: hidden;
+  transform-origin: 50% 88%;
 }
 
-/* 高光扫过：只在数据载入时演一次（App 里加 .sheen），不做常驻循环。
-   常驻版本实测让 msedge 进程多占约 5 个点 GPU——顶栏带 backdrop-filter，
-   里面任何一帧变化都会逼它重新合成，代价与 logo 大小无关。 */
-.brand-mark::after {
-  content: '';
-  position: absolute;
-  inset: -60%;
-  background: linear-gradient(115deg, transparent 42%, rgba(255, 255, 255, 0.6) 50%, transparent 58%);
-  transform: translateX(-130%);
-  pointer-events: none;
+/* 三层节点各管一种 transform（果冻 / 磁吸 / 惯性），合并到一个元素会互相 overwrite。
+   见 motion.ts 的 useBrandMotion。 */
+.brand-mark-magnet {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 88%;
 }
 
-.brand-mark.sheen::after {
-  animation: mark-sheen 1.15s ease-out 1;
+/* 首屏的品牌位：同一套动效，只是放大 */
+.brand-mark-hero {
+  width: 84px;
+  height: 84px;
+  margin: 0 0 12px;
 }
 
-@keyframes mark-sheen {
-  from {
-    transform: translateX(-130%);
-  }
-  to {
-    transform: translateX(130%);
-  }
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .brand-text {
@@ -2037,8 +2031,10 @@ body[data-theme='dark'] .aurora .blob {
   stroke-linejoin: round;
 }
 
+/* 果冻动效全部由 GSAP 的 matchMedia(MOTION_OK) 控制，减少动效时不注册，无需 CSS 兜底。
+   这里只兜住一点：别让品牌标记在系统开启减少动效时仍被 hover 抬起。 */
 @media (prefers-reduced-motion: reduce) {
-  .brand-mark.sheen::after {
-    animation: none;
+  .brand-mark {
+    transform: none !important;
   }
 }

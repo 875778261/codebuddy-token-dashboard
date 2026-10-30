@@ -13,7 +13,7 @@
 ```bash
 npm install
 npm run dev          # http://localhost:5173
-npm run build        # 产出单个 dist/index.html（约 750 KB，可离线双击打开）
+npm run build        # 产出单个 dist/index.html（约 935 KB，可离线双击打开）
 ```
 
 ### 为什么不能直接"选择" AppData

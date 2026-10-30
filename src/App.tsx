@@ -21,11 +21,11 @@ import { captureHandles, firstDirectoryHandle, scanDrop } from './platform/dropS
 import { idbDel, idbGet, idbSet, prefs } from './platform/idb'
 import { getPalette } from './ui/theme'
 import { Aurora } from './ui/Aurora'
+import { BrandMark } from './ui/BrandMark'
 import { FreshnessChips } from './ui/FreshnessChips'
 import { SourcePathsButton } from './ui/importPaths'
 import { DropOverlay, Toast } from './ui/Overlays'
 import {
-  isReducedMotion,
   useDashboardReveal,
   useScrollProgress,
   useScrollRefresh,
@@ -87,7 +87,6 @@ export default function App() {
   const snapshotInputRef = useRef<HTMLInputElement>(null)
   /** 动效锚点：顶栏 / 仪表盘容器 / 顶部进度条 / 主题按钮 / 品牌标记 */
   const topbarRef = useRef<HTMLElement>(null)
-  const brandRef = useRef<HTMLDivElement>(null)
   const stackRef = useRef<HTMLDivElement>(null)
   const progressRef = useRef<HTMLDivElement>(null)
   const themeIconRef = useRef<HTMLButtonElement>(null)
@@ -583,18 +582,6 @@ export default function App() {
   // 换窗口后卡片高度会变，触发器位置要重算
   useScrollRefresh([agg, preset, custom])
 
-  // 数据载入/刷新完成时给 logo 扫一道高光：一次性事件，不做常驻循环（常驻多占 ~5 点 GPU）
-  useEffect(() => {
-    const el = brandRef.current
-    if (!el || !dataset || isReducedMotion()) return
-    el.classList.remove('sheen')
-    void el.offsetWidth
-    el.classList.add('sheen')
-    const done = () => el.classList.remove('sheen')
-    el.addEventListener('animationend', done, { once: true })
-    return () => el.removeEventListener('animationend', done)
-  }, [dataset])
-
   return (
     <>
       <Aurora />
@@ -602,9 +589,8 @@ export default function App() {
       <div className="shell">
         <header className="topbar" ref={topbarRef}>
           <div className="brand">
-            <div className="brand-mark" ref={brandRef} aria-hidden="true">
-              BB
-            </div>
+            {/* 果冻回弹的触发键是数据生成时间：重扫或导入后整块弹一次 */}
+            <BrandMark pulse={dataset?.generatedAt ?? 0} />
             <div className="brand-text">
               <h1>Buddy 用量看板</h1>
               <div className="meta">

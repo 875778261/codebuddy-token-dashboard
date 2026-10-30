@@ -1,6 +1,7 @@
 import { useGSAP } from '@gsap/react'
 import { gsap } from 'gsap'
 import { useRef } from 'react'
+import { BrandMark } from './BrandMark'
 import { IS_FILE, PathList } from './importPaths'
 import { EASE, MOTION_OK } from './motion'
 
@@ -43,6 +44,7 @@ export function Landing({
   return (
     <div className="landing" ref={ref}>
       <section className="hero">
+        <BrandMark variant="hero" />
         <h2>AI 用量总账，数据不出这台电脑</h2>
         <p>
           把 <b>CodeBuddy</b> 或 <b>WorkBuddy</b> 的文件夹<b>拖进窗口</b>。只给一个，就只看这一份；两个都给，就合成一份总账，
