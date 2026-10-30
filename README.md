@@ -1,126 +1,104 @@
+<div align="center">
+
 # Buddy 用量看板
 
-本机 AI 用量的本地看板：**纯前端、零上传**。支持只载入 CodeBuddy、只载入 WorkBuddy、或两端都载入（合并成一份总账 + 端对比）。
+**把 CodeBuddy、WorkBuddy 留在本机的用量记录，读成一份逐请求可核对的总账。**
 
-- CodeBuddy：扫描 `history/**/index.json`，可选 `codebuddy-sessions.vscdb` 补标题与项目路径；
-- WorkBuddy：扫描 `~/.workbuddy/projects/**/*.jsonl`（必须含 `subagents/`），逐请求 usage 与积分都来自 jsonl；
-- 两端都载入时：token 直接相加（实测零重叠），并给出量差 / 同模型效率差 / 切换节奏三层端对比。
+<sub>纯前端 · 零上传 · 单文件产物 · 数据不出这台电脑</sub>
 
-页面结构参考 [token.daeai.cn](https://token.daeai.cn/)（WorkBuddy 看板）的"选目录 → 浏览器内扫描"交互，但数据源、指标口径和可视化都是按两端的真实文件结构重建的。
+[![在线试用](https://img.shields.io/badge/live_demo-pages.dev-4f5df0)](https://codebuddy-token-dashboard.pages.dev)
+![纯前端](https://img.shields.io/badge/pure_frontend-zero_upload-0d9d92)
+![测试](https://img.shields.io/badge/tests-52_passed-2ea44f)
+![体积](https://img.shields.io/badge/dist-%3C1_MB-6e7781)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
+
+<img src="docs/screenshots/dashboard.png" width="900" alt="看板总览：KPI、端对比">
+
+</div>
+
+## 它回答什么
+
+- 这段时间一共用了多少 token、多少积分？缓存命中率多少？
+- 哪个项目、哪个模型最费钱？一天里几点用得最狠？
+- CodeBuddy 和 WorkBuddy 谁更费、单次请求谁更重、两边切换是什么节奏？
+- 拿数字去对账时，差的那部分是**数据缺失**还是**口径不同**？（数据体检逐条说明）
+
+数据来自本机已有的文件，不是自己埋点采集的：
+
+| 数据源 | 读什么 | 说明 |
+|---|---|---|
+| **CodeBuddy** | `history/**/index.json` | 逐请求 usage；可选 `codebuddy-sessions.vscdb` 补会话标题与项目路径 |
+| **WorkBuddy** | `~/.workbuddy/projects/**/*.jsonl`（含 `subagents/`） | 逐请求 usage 与积分都来自 jsonl |
+
+只给一端，就只看这一份；两端都给，就合成一份总账，并多出一块**端对比**（两边比一比）。token 直接相加（实测零重叠），比率各自用合并后的分子分母重算。
 
 ## 快速开始
 
 ```bash
 npm install
 npm run dev          # http://localhost:5173
-npm run build        # 产出单个 dist/index.html（约 935 KB，可离线双击打开）
+npm run build        # 产出单个 dist/index.html（不到 1 MB，可离线双击打开）
 ```
 
-### 为什么不能直接"选择" AppData
+不想装任何东西，先看效果：打开 <https://codebuddy-token-dashboard.pages.dev>，点「先看示例」——那是合成的示例用量，不含任何真实路径。
 
-Chrome / Edge 把 `AppData` 判定为**系统目录**，`showDirectoryPicker()` 与 `<input webkitdirectory>` 的目录选择器会直接拒绝，提示
-「无法打开此文件夹：由于此文件夹包含系统文件」。这是浏览器的硬限制，与读权限无关（同一路径交给页面读取是完全可行的，实测 250 ms 扫完）。`codebuddy-sessions.vscdb` 的文件选择器同样会被拦。
+进页面后有两种给数据的办法：
 
-两条绕过路径，都已用本机真实数据跑通：
-
-| 方式 | 操作 | 说明 |
+| 方式 | 操作 | 适用 |
 |---|---|---|
-| **A. 拖拽**（推荐） | CodeBuddy：把 `%LOCALAPPDATA%\CodeBuddyExtension\Data` 拖进窗口；要标题与项目路径，再把 `%APPDATA%\CodeBuddy CN\codebuddy-sessions.vscdb` 一起拖进来。WorkBuddy：把 `%USERPROFILE%\.workbuddy`（或其 `projects`）拖进来 | 两端可以分两次拖，后拖的只更新自己那一端；浏览器若给出可持久化句柄，「重扫 / 自动刷新」也能用 |
-| **B. 快照** | 跑 `npm run collect`，把生成的 `*-usage-*.json` 导入或拖进页面 | 归档、换机、CI，或拖拽也不可用时 |
+| **拖入**（推荐） | CodeBuddy：把 `%LOCALAPPDATA%\CodeBuddyExtension\Data` 拖进窗口；要标题与项目路径，再把 `%APPDATA%\CodeBuddy CN\codebuddy-sessions.vscdb` 一起拖进来。WorkBuddy：把 `%USERPROFILE%\.workbuddy`（或其 `projects`）拖进来 | 日常使用；拖完还能「重扫」读新增用量 |
+| **快照** | 跑 `npm run collect`，把生成的 `*-usage-*.json` 导入或拖进页面 | 归档、换机、CI，或拖入也不行时 |
 
-页面按**文件形状**识别数据源，不需要提前声明用的是哪个产品：`history/**/index.json` 归 CodeBuddy，`projects/**/*.jsonl` 归 WorkBuddy，一次拖入两种都能识别。
+页面按**文件形状**识别数据源，不需要提前声明是哪个产品：`history/**/index.json` 归 CodeBuddy，`projects/**/*.jsonl` 归 WorkBuddy，一次拖入两种都能认出来。两端可以分两次拖，后拖的只更新自己那一边。
 
-```bash
-npm run collect      # 读本机两份数据 → 一份快照 JSON（页面里导入或拖入）
-```
+选过的数据缓存在 IndexedDB，下次打开直接出图；「自动」打开后每 5 分钟静默重扫一次。
 
-> 拖完是否还能「重扫」，取决于浏览器有没有给可持久化目录句柄：Edge / Chrome 实测会给（`DataTransferItem.getAsFileSystemHandle` 拿到 directory handle 并写进 IndexedDB），因此拖完点「重扫」能读到新增用量；只有快照导入、`<input webkitdirectory>` 文件框、示例数据这三条路径没有句柄，顶栏「重扫」会明确提示改用拖拽或「目录」。
-> **拖拽必须通过 `http(s)` 打开页面**（`npm run dev` 或任意静态托管）：`file://` 下浏览器不会为拖入的目录创建文件系统条目，表现是"拖了没反应"。`file://` 场景请用快照导入。
+<details>
+<summary><b>为什么不能直接「选择」AppData（点开）</b></summary>
 
-### 踩过的坑（供后来者参考）
+Chrome / Edge 把 `AppData` 判定为**系统目录**，`showDirectoryPicker()` 与 `<input webkitdirectory>` 的目录选择器会直接拒绝，提示「无法打开此文件夹：由于此文件夹包含系统文件」。这是浏览器的硬限制，与读权限无关（同一路径交给页面读取完全可行，实测 250 ms 扫完）。`codebuddy-sessions.vscdb` 的文件选择器同样会被拦——所以走「拖入」或「快照」。
+
+拖完还能不能「重扫」，取决于浏览器有没有给可持久化目录句柄：Edge / Chrome 实测会给（`DataTransferItem.getAsFileSystemHandle` 拿到 directory handle 并写进 IndexedDB）；只有快照导入、`<input webkitdirectory>` 文件框、示例数据这三条路径没有句柄，顶栏「重扫」会提示改用拖入或「加文件夹」。
+
+**拖入必须通过 `http(s)` 打开页面**（`npm run dev` 或任意静态托管）：`file://` 下浏览器不会为拖入的目录创建文件系统条目，表现是「拖了没反应」。`file://` 场景请用快照导入。
+
+</details>
+
+<details>
+<summary><b>踩过的坑（供后来者参考）</b></summary>
 
 - **目录联接（junction）不能拖**：`npm run bridge` 生成的 `cb-bridge` 看似捷径，但 Chrome 对联接目录不返回 `FileSystemEntry`，拖进去等于没拖，扫描结果为 0 条。脚本还留在 `scripts/bridge.mjs`，仅供想手动验证「选择目录能否选联接」的人使用，不作为推荐路径。
 - **不要试图用 `file://` + 目录选择**：`showDirectoryPicker` 在部分 `file://` 场景抛 `SecurityError`，界面会回落到文件框，但文件框同样拦 AppData。
 
-选完的数据会缓存在 IndexedDB，下次打开直接出图。
+</details>
 
-## 部署
+## 界面
 
-产物是单个 `dist/index.html`，托管在 **Cloudflare Workers 静态资源**（`wrangler.jsonc` 里 `assets.directory = ./dist`，`not_found_handling = single-page-application`）。
+**端对比**——两端都读入时才出现，分三层：量差、同模型效率差（只比两端都存在的模型，避免拿模型构成差异当效率差）、切换节奏（逐日「只用 CB / 只用 WB / 都用 / 都没用」）。
 
-### 主路径：push 即部署
+<img src="docs/screenshots/compare.png" width="900" alt="端对比：量差、同模型效率、切换节奏">
 
-线上以 **Workers Builds（Git 集成）** 为唯一部署入口：Cloudflare 拉 `main` 构建并发布，本地不再手动 deploy，避免两个入口互相覆盖版本历史。
-
-```
-Dashboard → Workers & Pages → codebuddy-token-dashboard
-         → Settings → Builds → Connect → 选 875778261/codebuddy-token-dashboard
-```
-
-| 构建设置 | 值 |
+| 每日用量 / 模型用量 | 时段分布 / 项目分布 |
 |---|---|
-| Production branch | `main` |
-| Build command | `npm run build` |
-| Deploy command | `npx wrangler deploy` |
+| <img src="docs/screenshots/trend-models.png" width="440" alt="每日用量与模型用量"> | <img src="docs/screenshots/heat-projects.png" width="440" alt="星期×小时热力图与项目分布"> |
 
-免费计划为 3000 构建分钟/月、并发 1、单次超时 20 分钟。非 `main` 分支自动触发 Preview 构建，只出预览 URL，不切线上。
+**会话明细**——点一行展开这次会话的每次请求：散点看规模分布，右边的表给逐请求的输入、输出、缓存、积分。模型卡片点一下，整个看板就按这个模型过滤。
 
-硬性约束（踩过就构建失败）：
+<img src="docs/screenshots/sessions.png" width="900" alt="会话明细：展开逐请求">
 
-- Dashboard 里的 Worker 名称必须与 `wrangler.jsonc` 的 `name` 完全一致（当前均为 `codebuddy-token-dashboard`）；
-- `wrangler.jsonc` 必须在仓库里，否则 Cloudflare 的 autoconfig 会先开一个 PR 补配置。
+**数据体检**——每份数据自己查一遍，合并后再核对一次；缺什么直接写出来，而不是藏在脚注里。
 
-### 本地只需校验
+<img src="docs/screenshots/health.png" width="900" alt="单次请求规模与数据体检">
 
-```bash
-npm run deploy:dry      # build + 干跑，校验配置和产物，不上传、不切线上
-```
+首屏是这样的，明暗两个主题都在：
 
-### 应急手动部署
-
-Git 集成不可用时才用，用完记得让 `main` 与线上重新对齐，否则下一次 push 会覆盖掉这次手动版本：
-
-```bash
-npx wrangler login      # 首次：OAuth 授权（或改用 CLOUDFLARE_API_TOKEN）
-npm run deploy:manual   # build + wrangler deploy
-```
-
-### 线上地址
-
-同一份 `dist` 产物，三个入口：
-
-| 入口 | 地址 | 无代理可用 | 部署方式 |
-|---|---|---|---|
-| **Cloudflare Pages（无代理首选）** | <https://codebuddy-token-dashboard.pages.dev> | ✅ 实测 200 / 2~4s | `npm run deploy:pages` |
-| Cloudflare Workers | <https://codebuddy-token-dashboard.875778261.workers.dev> | ❌ | push `main` 自动，或 `npm run deploy:manual` |
-| GitHub Pages（备份镜像） | <https://875778261.github.io/codebuddy-token-dashboard/> | ⚠️ 实测 30s | push `main` 自动（`.github/workflows/pages.yml`） |
-
-三处内容一致（Workers 与 GitHub Pages 两份曾用 normalized md5 比对，差异仅 Windows `core.autocrlf` 造成的 22 个 CR 字节）。纯本地使用仍可直接双击 `dist/index.html`。
-
-#### 网络事实（2026-10-30 实测，取代此前判断）
-
-用**同一个 Cloudflare 边缘 IP `104.18.21.135`、只换 SNI** 做对照，结论是**阻断按 SNI 关键词，不按 IP**：
-
-| SNI | 同一 IP 下的握手结果 |
+| 开始页 | 深色主题 |
 |---|---|
-| `*.workers.dev` | ClientHello 后被 RST（curl exit 35） |
-| `*.pages.dev` | 成功（530 = Cloudflare「未知主机」页） |
-| 任意普通域名 | 成功（530） |
-
-- `*.workers.dev`：**DNS 投毒 + SNI 阻断**双重失效。投毒在链路层——`8.8.8.8:53` 与阿里 DoH `223.5.5.5` 都返回伪造地址（Facebook AS 段、`face:b00c` 的 IPv6、Teredo 前缀），**换 DNS 服务器无用**；改 hosts 也无用，因为指向真实边缘 IP 后 SNI 仍被 RST。
-- `*.pages.dev`：**不受影响**，是无代理下的可用入口。旧文档「换 Pages 也不能解决」是误判，源于一次 `pages.dev` exit 35 的偶发失败、未做交叉验证。
-- `*.github.io`：DNS 干净但极慢（30s 才 200），仅作备份；`github.com` 无代理下 IPv4 直接不通，`git push` 与 `gh` 需开代理。
-- `dash.cloudflare.com` / `api.cloudflare.com` / `registry.npmjs.org` 直连正常：**部署与依赖安装不依赖代理**。
-- 本机裸 `curl` 打不通 Workers 地址**不代表部署失败**。
-
-> SPA 深层路径回落：Workers 侧由 `wrangler.jsonc` 的 `not_found_handling` 负责，Pages 侧由 `public/_redirects` 负责。
-
-#### 备用：自定义域名
-
-若将来有托管在 Cloudflare 的域名，可在 `wrangler.jsonc` 加 `routes`（`{ "pattern": "dash.example.com", "custom_domain": true }`）直连；SNI 不含被拦关键词即可无代理访问，那时上面两套镜像都可以撤掉。
-
+| <img src="docs/screenshots/landing.png" width="440" alt="开始页：拖入文件夹或导入快照"> | <img src="docs/screenshots/dashboard-dark.png" width="440" alt="深色主题下的总览"> |
 
 ## 指标口径
+
+口径写在这里，是因为这些数字要拿去对账。
 
 | 指标 | 口径 | 数据来源 |
 |---|---|---|
@@ -148,7 +126,7 @@ totalTokens == inputTokens + outputTokens
 归一后同 key 不同原串的项目数 == suspectedDuplicateProjects
 ```
 
-**端对比**只在两端都载入时出现，分三层：量差、同模型效率差（只比两端同名的模型）、切换节奏（逐日「只用 CB / 只用 WB / 都用 / 都没用」）。所有比率字段各自重算，绝不求和；单源视图里的积分只能叫「该端已知积分」。
+端对比里的比率字段各自重算，绝不求和；单源视图里的积分只能叫「该端已知积分」。
 
 ## 数据体检与已知缺口
 
@@ -165,50 +143,116 @@ totalTokens == inputTokens + outputTokens
 ## 验证
 
 ```bash
-npm test          # 38 个单元测试：解析、聚合、按源切片、合并、WorkBuddy 解析、快照往返、SQLite 解析器
+npm test          # 52 个单元测试：解析、聚合、按源切片、合并、WorkBuddy 解析、快照往返、SQLite 解析、新鲜度
 npm run verify    # 真实数据对拍：TS 管线 vs Python 独立实现
 npm run lint:copy # 文案门禁：界面可见文案里的禁用词与超长句（规则见 docs/COPY.md；build 前自动跑）
 ```
 
-`npm run verify` 会跑 `scripts/ground-truth.py`（独立的 Python 实现）与 `scripts/verify-pipeline.ts`（浏览器里跑的那份 TS 代码），逐字段比对
-请求数、Token、积分、两条恒等式、逐日、逐会话、以及快照往返。任何差异都判定为解析 bug。
+`npm run verify` 会跑 `scripts/ground-truth.py`（独立的 Python 实现）与 `scripts/verify-pipeline.ts`（浏览器里跑的那份 TS 代码），逐字段比对请求数、Token、积分、两条恒等式、逐日、逐会话、以及快照往返。任何差异都判定为解析 bug。
 
-最近一次本机对拍结果：`128 会话 / 674 请求 / 886,086,182 token / 1611.69 积分`，逐日逐会话完全一致。
+本机最近一次对拍：`128 会话 / 674 请求 / 886,086,182 token / 1611.69 积分`，逐日逐会话完全一致（仅作回归基线，不是承诺值）。
 
-## 目录结构
+## 架构
+
+三个决定撑起了「零上传」：
+
+1. **采集放在浏览器里**（[ADR 0002](docs/adr/0002-pure-frontend-collection.md)）：目录扫描、解析、聚合全在前端完成，没有服务端，也就没有可上传的通道。
+2. **自己写了一个只读 SQLite 解析器**（`src/core/sqlite.ts`）：为了不引入 wasm，也不把 `.vscdb` 拷来拷去。
+3. **快照 JSON 作为可携带的真值**（[ADR 0003](docs/adr/0003-merge-workbuddy-into-one-dataset.md)）：归档、换机、对拍都用同一份格式。
 
 ```
-GLOSSARY.md        领域术语表（数据源 / 请求 / 积分 / 无记录日）
+GLOSSARY.md        领域术语表（数据源 / 请求 / 积分 / 无记录日 / 端对比）
 src/
   core/            纯函数，可被 Node 与浏览器共用
     sqlite.ts      极简只读 SQLite 解析（表 b-tree + overflow 页）
     parse.ts       CodeBuddy history index.json → Dataset（含自检与覆盖率）
     workbuddyParse.ts  WorkBuddy projects/**/*.jsonl → Dataset（去重 / 全零回落 / subagents）
     merge.ts       切片归一化与合并（路径归一、源前缀、疑似同项目）
-    ids.ts         带源前缀的会话 id
-    sessions.ts    sessions.vscdb → 会话维表
     aggregate.ts   时间窗口 / 模型 / 项目 / 时段 / 分布聚合（含按源过滤）
     snapshot.ts    快照序列化与反序列化（v2，兼容 v1）
-    demo.ts        合成示例数据（双端，不含任何真实路径）
-  platform/        浏览器侧 I/O（目录扫描、拖拽扫描、IndexedDB）
-    browserScan.ts 目录选择器 / 文件夹文件框
-    dropScan.ts    拖拽读取（绕开系统目录选择器）
-  ui/              卡片与图表组件
+  platform/        浏览器侧 I/O（目录扫描、拖入扫描、IndexedDB）
+  ui/              卡片与图表组件（ECharts + GSAP）
 docs/
   codebuddy-ide-data-sources.md  本机数据源勘察报告（口径依据）
   workbuddy-data-sources.md      WorkBuddy 数据源勘察报告（含 token.daeai.cn 口径对拍）
-  exploration/     复核脚本（cb_verify.py / wb_verify.py）与参考输出
   adr/             架构决策记录
 scripts/
-  bridge.mjs       生成 cb-bridge 目录联接
   collect.ts       本地采集 → 快照 JSON
-  local-files.ts   Node 侧读取本机数据（collect 与 verify 共用）
   verify-pipeline.ts / ground-truth.py  真值对拍
 ```
 
-## 架构决策
+所有指标只有一份聚合实现：按源过滤是**视图**，不是第二条管线（[ADR 0004](docs/adr/0004-source-slices-and-compare.md)）。
 
-- [ADR 0001](docs/adr/0001-playwright-install-scope.md)：浏览器自动化用全局 `playwright-cli`，不在仓库内装 Playwright。
-- [ADR 0002](docs/adr/0002-pure-frontend-collection.md)：为什么采集放在浏览器里、为什么自己写 SQLite 解析器、为什么用快照 JSON 作为可携带真值。
-- [ADR 0003](docs/adr/0003-merge-workbuddy-into-one-dataset.md)：WorkBuddy 作为第二个数据源并入同一份 Dataset；合并必须先做三处归一化；积分因共用账户只能作为「账号消耗下限」。
-- [ADR 0004](docs/adr/0004-source-slices-and-compare.md)：支持只载入一端 / 两端合并；端对比限定为量差、同模型效率差、节奏差；允许按源过滤，但只有一套聚合。
+## 部署
+
+产物是单个 `dist/index.html`。线上以 **Cloudflare Workers Builds（Git 集成）** 为唯一主入口：Cloudflare 拉 `main` 构建并发布，本地不手动 deploy，避免两个入口互相覆盖版本历史。
+
+| 入口 | 地址 | 无代理可用 | 部署方式 |
+|---|---|---|---|
+| **Cloudflare Pages（无代理首选）** | <https://codebuddy-token-dashboard.pages.dev> | 是，实测 200 / 2~4s | `npm run deploy:pages` |
+| Cloudflare Workers | <https://codebuddy-token-dashboard.875778261.workers.dev> | 否 | push `main` 自动，或 `npm run deploy:manual` |
+| GitHub Pages（备份镜像） | <https://875778261.github.io/codebuddy-token-dashboard/> | 慢，实测 30s | push `main` 自动（`.github/workflows/pages.yml`） |
+
+本地只需要校验配置和产物，不上传、不切线上：
+
+```bash
+npm run deploy:dry      # build + wrangler deploy --dry-run
+```
+
+<details>
+<summary><b>构建设置与两条硬性约束（点开）</b></summary>
+
+```
+Dashboard → Workers & Pages → codebuddy-token-dashboard
+         → Settings → Builds → Connect → 选 875778261/codebuddy-token-dashboard
+```
+
+| 构建设置 | 值 |
+|---|---|
+| Production branch | `main` |
+| Build command | `npm run build` |
+| Deploy command | `npx wrangler deploy` |
+
+免费计划为 3000 构建分钟/月、并发 1、单次超时 20 分钟。非 `main` 分支自动触发 Preview 构建，只出预览 URL，不切线上。
+
+- Dashboard 里的 Worker 名称必须与 `wrangler.jsonc` 的 `name` 完全一致（当前均为 `codebuddy-token-dashboard`）；
+- `wrangler.jsonc` 必须在仓库里，否则 Cloudflare 的 autoconfig 会先开一个 PR 补配置。
+
+Git 集成不可用时才手动部署，用完记得让 `main` 与线上重新对齐，否则下一次 push 会覆盖掉这次手动版本：
+
+```bash
+npx wrangler login      # 首次：OAuth 授权（或改用 CLOUDFLARE_API_TOKEN）
+npm run deploy:manual   # build + wrangler deploy
+```
+
+SPA 深层路径回落：Workers 侧由 `wrangler.jsonc` 的 `not_found_handling` 负责，Pages 侧由 `public/_redirects` 负责。
+
+</details>
+
+<details>
+<summary><b>网络事实：为什么 pages.dev 是首选入口（2026-10-30 实测）</b></summary>
+
+用**同一个 Cloudflare 边缘 IP `104.18.21.135`、只换 SNI** 做对照，结论是**阻断按 SNI 关键词，不按 IP**：
+
+| SNI | 同一 IP 下的握手结果 |
+|---|---|
+| `*.workers.dev` | ClientHello 后被 RST（curl exit 35） |
+| `*.pages.dev` | 成功（530 = Cloudflare「未知主机」页） |
+| 任意普通域名 | 成功（530） |
+
+- `*.workers.dev`：**DNS 投毒 + SNI 阻断**双重失效。投毒在链路层——`8.8.8.8:53` 与阿里 DoH `223.5.5.5` 都返回伪造地址（Facebook AS 段、`face:b00c` 的 IPv6、Teredo 前缀），**换 DNS 服务器无用**；改 hosts 也无用，因为指向真实边缘 IP 后 SNI 仍被 RST。
+- `*.pages.dev`：**不受影响**，是无代理下的可用入口。旧文档「换 Pages 也不能解决」是误判，源于一次 `pages.dev` exit 35 的偶发失败、未做交叉验证。
+- `*.github.io`：DNS 干净但极慢（30s 才 200），仅作备份；`github.com` 无代理下 IPv4 直接不通，`git push` 与 `gh` 需开代理。
+- `dash.cloudflare.com` / `api.cloudflare.com` / `registry.npmjs.org` 直连正常：**部署与依赖安装不依赖代理**。
+- 本机裸 `curl` 打不通 Workers 地址**不代表部署失败**。
+
+有托管在 Cloudflare 的域名时，可在 `wrangler.jsonc` 加 `routes`（`{ "pattern": "dash.example.com", "custom_domain": true }`）直连；SNI 不含被拦关键词即可无代理访问。
+
+</details>
+
+## 文档
+
+- [`GLOSSARY.md`](GLOSSARY.md)：领域术语表（数据源、切片、合并视图、端对比、已知积分、无记录日）。
+- [`docs/COPY.md`](docs/COPY.md)：界面文案规范与禁用词，`npm run lint:copy` 是它的执行者。
+- [`docs/codebuddy-ide-data-sources.md`](docs/codebuddy-ide-data-sources.md) / [`docs/workbuddy-data-sources.md`](docs/workbuddy-data-sources.md)：两个数据源的勘察报告，所有口径的一手依据。
+- [`docs/adr/`](docs/adr/)：架构决策记录，从 [0001](docs/adr/0001-playwright-install-scope.md) 起。
