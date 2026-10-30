@@ -30,6 +30,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # 文案门禁不在这里单列：它挂在 package.json 的 prebuild 钩子上，
+      # 本地、GitHub Pages 与 Cloudflare Workers Builds 共用同一个入口，违规即构建失败。
       - run: npm run build
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
