@@ -13,7 +13,7 @@ const MODES: Array<{ key: TrendMode; label: string }> = [
   { key: 'usage', label: 'Token 构成' },
   { key: 'cache', label: '缓存构成' },
   { key: 'model', label: '模型构成' },
-  { key: 'source', label: '端构成' },
+  { key: 'source', label: '两边构成' },
 ]
 
 interface TipRow {

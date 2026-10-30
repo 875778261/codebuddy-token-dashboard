@@ -21,7 +21,7 @@ export function ProjectCard({ agg, palette }: { agg: Aggregates; palette: Palett
       </div>
 
       {projects.length === 0 ? (
-        <div className="empty-state">当前窗口没有项目数据</div>
+        <div className="empty-state">这个时间段没有项目数据</div>
       ) : (
         <div className="plist">
           {projects.map((p) => {
@@ -47,7 +47,7 @@ export function ProjectCard({ agg, palette }: { agg: Aggregates; palette: Palett
         </div>
       )}
       <div className="card-foot">
-        {rest > 0 ? `另有 ${rest} 个项目未展示。` : '每个项目右侧的曲线是该窗口内的每日 token。'}
+        {rest > 0 ? `另有 ${rest} 个项目未展示。` : '每个项目右侧的曲线是这段时间每天的 token。'}
       </div>
     </section>
   )

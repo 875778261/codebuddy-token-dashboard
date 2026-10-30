@@ -93,7 +93,7 @@ export function HealthCard({
               覆盖 {cov.first ?? '—'} → {cov.last ?? '—'} · 有记录 {cov.daysWithData}/{cov.daysInRange} 天（{fmtPct(coveragePct, 0)}）
             </span>
             <span>
-              窗口内 {agg.totals.activeDays}/{agg.days.length} 天有记录
+              这段时间 {agg.totals.activeDays}/{agg.days.length} 天有记录
             </span>
           </div>
           <CoverageStrip days={days} missing={missing} />

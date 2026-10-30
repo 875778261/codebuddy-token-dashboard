@@ -162,7 +162,7 @@ export function SessionCard({
             })}
           </tbody>
         </table>
-        {rows.length === 0 ? <div className="empty-state">当前窗口没有会话</div> : null}
+        {rows.length === 0 ? <div className="empty-state">这个时间段没有会话</div> : null}
       </div>
 
       {selected ? (

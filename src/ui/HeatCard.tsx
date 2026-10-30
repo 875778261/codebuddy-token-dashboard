@@ -26,7 +26,7 @@ export function HeatCard({ agg, palette }: { agg: Aggregates; palette: Palette }
       <div className="card-head">
         <div>
           <h3>时段分布</h3>
-          <div className="sub">星期 × 小时 · 窗口内 token 密度</div>
+          <div className="sub">星期 × 小时 · 这段时间的 token 密度</div>
         </div>
         <div className="heat-scale">
           <span>少</span>

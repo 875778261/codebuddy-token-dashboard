@@ -797,7 +797,7 @@ export default function App() {
       <footer className="foot">
         <span>
           {dataset ? `窗口：${agg?.window.label} · ${dataset.coverage.first ?? '—'} → ${dataset.coverage.last ?? '—'}` : '还没选数据文件夹'}
-          {dataset?.generatedAt ? ` · 快照生成于 ${new Date(dataset.generatedAt).toLocaleString('zh-CN')}` : ''}
+          {dataset?.generatedAt ? ` · 数据生成于 ${new Date(dataset.generatedAt).toLocaleString('zh-CN')}` : ''}
         </span>
       </footer>
 

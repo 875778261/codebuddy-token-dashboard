@@ -36,13 +36,13 @@ export function DistCard({ agg, palette }: { agg: Aggregates; palette: Palette }
       <div className="card-head">
         <div>
           <h3>单次请求规模</h3>
-          <div className="sub">按模型看每次请求的 token 分布（对数轴）。虚线是这条分布的中位数</div>
+          <div className="sub">按模型看每次请求的 token 分布（对数轴）。虚线是 p50（中位数）</div>
         </div>
         <div className="tools">{agg.requestCountInWindow} 次请求</div>
       </div>
 
       {rows.length === 0 ? (
-        <div className="empty-state">当前窗口请求太少，无法形成分布</div>
+        <div className="empty-state">这个时间段的请求太少，看不出分布</div>
       ) : (
         <div className="dist">
           {rows.map((r, i) => (
@@ -62,7 +62,7 @@ export function DistCard({ agg, palette }: { agg: Aggregates; palette: Palette }
           ))}
         </div>
       )}
-      <div className="card-foot">右列为该模型在窗口内的请求样本数；极端长尾请求会拉高 p90，适合作上下文预算参考。</div>
+      <div className="card-foot">最右侧是这个模型的请求数。p50 = 一半请求低于它，p90 = 九成请求低于它；估上下文预算看 p90 更稳。</div>
     </section>
   )
 }

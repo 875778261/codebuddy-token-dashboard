@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "lint:copy": "tsx scripts/lint-copy.ts",
     "verify": "python scripts/ground-truth.py && tsx scripts/verify-pipeline.ts",
     "verify:ts": "tsx scripts/verify-pipeline.ts",
     "bridge": "node scripts/bridge.mjs",

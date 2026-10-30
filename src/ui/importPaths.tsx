@@ -34,7 +34,7 @@ export interface ImportPath {
 export const IMPORT_PATHS: ImportPath[] = [
   { key: 'codebuddy', label: 'CodeBuddy', value: DATA_PATH, hint: 'history/**/index.json' },
   { key: 'workbuddy', label: 'WorkBuddy', value: WB_PATH, hint: 'projects/**/*.jsonl' },
-  { key: 'sessions', label: 'CodeBuddy 会话库（可选）', value: DB_PATH, hint: '补标题与项目路径', optional: true },
+  { key: 'sessions', label: 'CodeBuddy 会话库（可选）', value: DB_PATH, hint: '补标题和项目路径', optional: true },
 ]
 
 /** 某个源对应的用量数据根；`sessions` 不属于任何一端 */

@@ -167,6 +167,7 @@ totalTokens == inputTokens + outputTokens
 ```bash
 npm test          # 38 个单元测试：解析、聚合、按源切片、合并、WorkBuddy 解析、快照往返、SQLite 解析器
 npm run verify    # 真实数据对拍：TS 管线 vs Python 独立实现
+npm run lint:copy # 文案门禁：界面可见文案里的禁用词与超长句（规则见 docs/COPY.md）
 ```
 
 `npm run verify` 会跑 `scripts/ground-truth.py`（独立的 Python 实现）与 `scripts/verify-pipeline.ts`（浏览器里跑的那份 TS 代码），逐字段比对

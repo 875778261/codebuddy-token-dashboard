@@ -28,7 +28,7 @@ export function ModelCard({
       </div>
 
       {models.length === 0 ? (
-        <div className="empty-state">当前窗口没有模型用量</div>
+        <div className="empty-state">这个时间段没有模型用量</div>
       ) : (
         <>
           <div className="mhead">
