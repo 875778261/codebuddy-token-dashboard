@@ -100,7 +100,7 @@ export function SessionCard({
       <div className="card-head">
         <div>
           <h3>会话明细</h3>
-          <div className="sub">点击任一行展开请求级散点与明细表</div>
+          <div className="sub">点一行展开每次请求的散点和明细</div>
         </div>
         <div className="tools">
           {modelFocus ? (

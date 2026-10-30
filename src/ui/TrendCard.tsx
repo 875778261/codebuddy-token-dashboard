@@ -307,9 +307,9 @@ export function TrendCard({
           <h3>每日用量</h3>
           <div className="sub">
             {mode === 'usage'
-              ? 'Token 按 缓存／未命中／输出 三段堆叠，折线为积分'
+              ? 'Token 拆成缓存 / 未命中 / 输出三块堆叠，折线是积分'
               : mode === 'cache'
-                ? '输入 token 的缓存命中构成（按比例）与命中率'
+                ? '输入 token 里有多少命中缓存，以及命中率'
                 : mode === 'source'
                   ? '每日 Token 按数据源堆叠：一眼看出什么时候换了工具'
                   : '每日 Token 的模型构成（按比例）'}

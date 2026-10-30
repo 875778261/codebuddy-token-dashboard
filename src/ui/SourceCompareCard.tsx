@@ -201,7 +201,7 @@ export function SourceCompareCard({
             <span>只比两边都出现的模型。跨模型比「每百万 token 积分」，比出来的多半是模型构成，不是端效率</span>
           </div>
           {shared.length === 0 ? (
-            <div className="empty-state">两端没有同名模型，无法做效率对照</div>
+            <div className="empty-state">两边没有同名模型，没法做效率对照</div>
           ) : (
             <table className="cmp-table compact">
               <thead>
@@ -234,7 +234,7 @@ export function SourceCompareCard({
           <div className="cmp-sub">
             <b>切换节奏</b>
             <span>
-              两端都有 {count('both')} 天 · 只用 CB {count('cb')} 天 · 只用 WB {count('wb')} 天 · 都没用 {count('none')} 天
+              两边都有 {count('both')} 天 · 只用 CB {count('cb')} 天 · 只用 WB {count('wb')} 天 · 都没用 {count('none')} 天
             </span>
           </div>
           <div className="cmp-days-strip" role="img" aria-label="每日使用哪一端">

@@ -67,7 +67,7 @@ export function KpiRow({ agg }: { agg: Aggregates }) {
         value={<CountUp value={t.credit} format={fmtCredit} />}
         sub={
           <>
-            覆盖 {fmtPct(creditCoverage, 0)} 请求 · 每百万 token ≈ {creditPerM.toFixed(1)}
+            {fmtPct(creditCoverage, 0)} 请求有积分 · 每百万 token ≈ {creditPerM.toFixed(1)}
           </>
         }
         delta={<Delta current={t.credit} previous={prev?.credit} />}
@@ -95,7 +95,7 @@ export function KpiRow({ agg }: { agg: Aggregates }) {
         label="活跃天数"
         value={<CountUp value={t.activeDays} format={(v) => String(Math.round(v))} duration={0.8} />}
         unit={`/ ${agg.days.length} 天`}
-        sub={`窗口覆盖率 ${fmtPct(coverage, 0)} · 有数据日均 ${fmtTokens(t.avgPerActiveDay)}`}
+        sub={`有记录的天占 ${fmtPct(coverage, 0)} · 日均 ${fmtTokens(t.avgPerActiveDay)}`}
       />
     </div>
   )

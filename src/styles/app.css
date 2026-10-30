@@ -1211,6 +1211,35 @@ table.req td.l {
   opacity: 1;
 }
 
+/* 数据体检：缺口清单默认收起——它是排查用的 L3 信息，不该与结论平铺争注意力 */
+.health-more {
+  margin-top: 10px;
+}
+
+.health-more > summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--ink-2);
+  cursor: pointer;
+  list-style: none;
+}
+
+.health-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.health-more > summary::before {
+  content: '▸';
+  color: var(--ink-4);
+  font-size: 10px;
+}
+
+.health-more[open] > summary::before {
+  content: '▾';
+}
+
 .health-list {
   margin: 8px 0 0;
   padding-left: 16px;

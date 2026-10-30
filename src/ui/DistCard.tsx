@@ -36,7 +36,7 @@ export function DistCard({ agg, palette }: { agg: Aggregates; palette: Palette }
       <div className="card-head">
         <div>
           <h3>单次请求规模</h3>
-          <div className="sub">按模型看每次请求的 token 分布（对数轴），虚线为该模型 50% 分位</div>
+          <div className="sub">按模型看每次请求的 token 分布（对数轴）。虚线是这条分布的中位数</div>
         </div>
         <div className="tools">{agg.requestCountInWindow} 次请求</div>
       </div>

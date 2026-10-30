@@ -51,7 +51,7 @@ export function HealthCard({
       <div className="card-head">
         <div>
           <h3>数据体检</h3>
-          <div className="sub">逐源自检 + 跨源一致性；缺什么就说缺什么</div>
+          <div className="sub">每份数据自己查一遍，合并后再核对一次。缺什么直接写出来</div>
         </div>
         <div className="tools">
           <button type="button" className="btn ghost" onClick={onExport}>
@@ -65,32 +65,32 @@ export function HealthCard({
         <div className="health-col">
           <div className="checks">
             <Check
-              label="两条恒等式"
-              value={identityOk ? '全部成立' : '存在反例'}
-              sub={identityOk ? `${fmtInt(sc.inputEqCachePlusMiss.ok)} 条` : `fail ${fmtInt(identityFail)}`}
+              label="加总对得上"
+              value={identityOk ? '全部对得上' : '有对不上的'}
+              sub={identityOk ? `${fmtInt(sc.inputEqCachePlusMiss.ok)} 条记录` : `${fmtInt(identityFail)} 条对不上`}
               bad={!identityOk}
             />
             <Check
-              label="跨源请求合计"
+              label="合并没重复计数"
               value={mergeConsistent ? '一致' : '不一致'}
-              sub={`合并 ${fmtInt(actualRequests)} / Σ各源 ${fmtInt(sumBySource)}`}
+              sub={`合并 ${fmtInt(actualRequests)} · 各源合计 ${fmtInt(sumBySource)}`}
               bad={!mergeConsistent}
             />
-            <Check label="请求解析" value={fmtInt(sc.requestsWithUsage)} sub={`/${fmtInt(sc.requestsTotal)} 条带 usage`} />
+            <Check label="读到的请求" value={fmtInt(sc.requestsWithUsage)} sub={`共 ${fmtInt(sc.requestsTotal)} 条记录`} />
             <Check
-              label="源内重复丢弃"
+              label="重复记录已去掉"
               value={fmtInt(sc.duplicateRequests)}
-              sub="(session, message) 重试双写"
+              sub="同一条被写了两遍"
               warn={sc.duplicateRequests > 0}
             />
-            <Check label="解析错误" value={fmtInt(sc.parseErrors)} sub="文件/行级" bad={sc.parseErrors > 0} />
-            <Check label="疑似同项目" value={fmtInt(sc.suspectedDuplicateProjects)} sub="归一后同 key 不同原串，只告警" warn={sc.suspectedDuplicateProjects > 0} />
-            <Check label="模型未记录" value={fmtInt(sc.sessionsUnknownModel)} sub="多为 CodeBuddy 缺 selectedModelId" warn={sc.sessionsUnknownModel > 0} />
+            <Check label="读不出来的行" value={fmtInt(sc.parseErrors)} sub="文件或某一行出错" bad={sc.parseErrors > 0} />
+            <Check label="可能是同一个项目" value={fmtInt(sc.suspectedDuplicateProjects)} sub="路径写法不同，只提示不合并" warn={sc.suspectedDuplicateProjects > 0} />
+            <Check label="没写明模型的会话" value={fmtInt(sc.sessionsUnknownModel)} sub="CodeBuddy 记录里没有这个字段" warn={sc.sessionsUnknownModel > 0} />
           </div>
 
           <div style={{ fontSize: 11, color: 'var(--ink-3)', display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
             <span>
-              覆盖 {cov.first ?? '—'} → {cov.last ?? '—'} · 有数据 {cov.daysWithData}/{cov.daysInRange} 天（{fmtPct(coveragePct, 0)}）
+              覆盖 {cov.first ?? '—'} → {cov.last ?? '—'} · 有记录 {cov.daysWithData}/{cov.daysInRange} 天（{fmtPct(coveragePct, 0)}）
             </span>
             <span>
               窗口内 {agg.totals.activeDays}/{agg.days.length} 天有记录
@@ -120,19 +120,24 @@ export function HealthCard({
                       {fmtInt(ssc.requestsWithUsage)} 请求 · {fmtInt(summary.coverage.daysWithData)} 天
                     </span>
                   </div>
-                  <div className="src-line">
-                    {fmtInt(summary.info.projectCount)} 项目 · {fmtInt(summary.info.convIndexCount)} 索引 · {fmtInt(summary.info.sessionMetaCount)} 元数据 ·{' '}
-                    {summary.info.elapsedMs} ms
-                    {Number.isFinite(scannedTs) ? ` · 扫描于 ${fmtDateTime(scannedTs)}` : ''}
+                  <div
+                    className="src-line"
+                    title={`${fmtInt(summary.info.convIndexCount)} 个会话索引 · ${fmtInt(summary.info.sessionMetaCount)} 条会话元数据`}
+                  >
+                    {fmtInt(summary.info.projectCount)} 个项目 · {summary.info.elapsedMs} 毫秒读完
+                    {Number.isFinite(scannedTs) ? ` · ${fmtDateTime(scannedTs)} 读过` : ''}
                   </div>
                   <div className="src-line ellipsis" title={summary.info.historyRoots.join('\n')}>
-                    {summary.info.historyRoots[0] ?? '未记录数据根'}
-                    {summary.info.historyRoots.length > 1 ? ` 等 ${summary.info.historyRoots.length} 处` : ''}
+                    {summary.info.historyRoots[0] ?? '没有记录数据在哪'}
+                    {summary.info.historyRoots.length > 1 ? ` 等 ${summary.info.historyRoots.length} 个位置` : ''}
                     {summary.info.sessionsDb ? ` · 会话库 ${summary.info.sessionsDb}` : ''}
                   </div>
-                  <div className="src-line">
-                    恒等式 fail {fmtInt(fail)} · 在途跳过 {fmtInt(ssc.inFlightSkipped)} · 无 credit {fmtInt(ssc.requestsWithoutCredit)}
-                    {ssc.usageZeroFallbacks ? ` · usage 全零回落 ${fmtInt(ssc.usageZeroFallbacks)}` : ''}
+                  <div
+                    className="src-line"
+                    title="加总对不上：字段之和与总数不相等 · 写到一半：读取时文件还在写 · 没有积分字段：该条记录不带 credit"
+                  >
+                    加总对不上 {fmtInt(fail)} · 写到一半 {fmtInt(ssc.inFlightSkipped)} · 没有积分字段 {fmtInt(ssc.requestsWithoutCredit)}
+                    {ssc.usageZeroFallbacks ? ` · 记录全是 0 的 ${fmtInt(ssc.usageZeroFallbacks)}` : ''}
                     {ssc.subAgentSessions ? ` · subagent ${fmtInt(ssc.subAgentSessions)}` : ''}
                   </div>
                 </div>
@@ -141,22 +146,20 @@ export function HealthCard({
           </div>
 
           <div className="src-line" style={{ marginTop: 6 }}>
-            合并积分覆盖 {fmtPct(creditCoverage, 0)} 请求（缺 credit {fmtInt(sc.requestsWithoutCredit)} 条）
+            积分覆盖率 {fmtPct(creditCoverage, 0)}（{fmtInt(sc.requestsWithoutCredit)} 条没有积分字段）
           </div>
           <div style={{ color: 'var(--ink-4)', fontSize: 11 }}>数据生成于 {fmtDateTime(new Date(dataset.generatedAt).getTime())}</div>
 
-          <div style={{ marginTop: 10 }}>
-            <b style={{ fontSize: 11, color: 'var(--ink-2)' }}>已知缺口（口径限制，不是 bug）</b>
+          <details className="health-more">
+            <summary>已知缺口 5 条：不是 bug，是数据本身记不全</summary>
             <ul className="health-list">
-              <li>CodeBuddy 的代码补全（Inline Completion）只有耗时、没有 token 与积分，永久无法计入。</li>
-              <li>CodeBuddy Inline Chat 不写入 history 的 requests[]，会少算。</li>
-              <li>
-                WorkBuddy 的 <code>workbuddy.db</code> 首版不读：会话标题沿用 jsonl 的 ai-title（约 6 成），缺失留空。
-              </li>
-              <li>两端共用积分账户：合并后的积分只是账号消耗下限，差额无法用本地数据补全或外推。</li>
-              <li>本地没有单价表，只能给积分，不能换算人民币。</li>
+              <li>CodeBuddy 的代码补全只记了耗时，没有 token 和积分，算不进去。</li>
+              <li>CodeBuddy 在选中代码里提问，不写进请求记录，会少算。</li>
+              <li>WorkBuddy 的会话标题约四成缺失，先留空。</li>
+              <li>两边共用一个积分账户：合并后的积分只是下限，差额补不出来。</li>
+              <li>本地没有单价，只显示积分，不折算成钱。</li>
             </ul>
-          </div>
+          </details>
         </div>
       </div>
     </section>

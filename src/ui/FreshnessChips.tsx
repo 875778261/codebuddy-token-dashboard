@@ -28,7 +28,7 @@ export function FreshnessChips({ freshness }: { freshness: Partial<Record<Source
           <span
             key={s}
             className={`fresh-chip${f.fresh ? ' fresh' : ''}`}
-            title={`${SOURCE_META[s].label} · 扫描于 ${f.at || '未知'}${f.fresh ? '（本次刷新）' : '（沿用缓存）'}`}
+            title={`${SOURCE_META[s].label} · 读取于 ${f.at || '未知'}${f.fresh ? '（本次刷新）' : '（沿用上次）'}`}
           >
             <i className={`src-dot ${s}`} aria-hidden="true" />
             <span className="fc-name">{SOURCE_META[s].label}</span>

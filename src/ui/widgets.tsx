@@ -87,7 +87,7 @@ export function Delta({ current, previous, invert = false }: { current: number; 
   const up = ratio >= 0
   const good = invert ? !up : up
   return (
-    <span className={`delta ${good ? 'up' : 'down'}`} title={`对比上一个等长窗口：${(previous / 1e6).toFixed(2)}M → ${(current / 1e6).toFixed(2)}M`}>
+    <span className={`delta ${good ? 'up' : 'down'}`} title={`对比上一个同样长的区间：${(previous / 1e6).toFixed(2)}M → ${(current / 1e6).toFixed(2)}M`}>
       {up ? '↑' : '↓'}
       {Math.abs(ratio * 100).toFixed(0)}%
     </span>
@@ -98,7 +98,7 @@ export function CoverageStrip({ days, missing }: { days: string[]; missing: Set<
   return (
     <div className="coverage-strip" role="img" aria-label="数据覆盖情况">
       {days.map((d) => (
-        <i key={d} className={missing.has(d) ? 'void' : ''} title={missing.has(d) ? `${d} · 无数据` : `${d} · 有数据`} />
+        <i key={d} className={missing.has(d) ? 'void' : ''} title={missing.has(d) ? `${d} · 无记录` : `${d} · 有记录`} />
       ))}
     </div>
   )

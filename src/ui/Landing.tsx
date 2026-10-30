@@ -126,7 +126,7 @@ export function Landing({
         </div>
         <div className="feature">
           <b>可携带快照</b>
-          <span>一键导出 JSON（两端来源都在里面），换机、归档、离线分享都不丢。</span>
+          <span>一键导出 JSON（两边的数据都在里面），换机、归档、离线分享都不丢。</span>
         </div>
         <div className="feature">
           <b>自带数据体检</b>

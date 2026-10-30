@@ -22,7 +22,7 @@ export function ModelCard({
       <div className="card-head">
         <div>
           <h3>模型用量</h3>
-          <div className="sub">{dual ? '请求级模型优先（WorkBuddy），会话级 selectedModelId 回落（CodeBuddy）· 点击查看细节' : '按会话级 selectedModelId 归属 · 点击查看细节'}</div>
+          <div className="sub">{dual ? 'WorkBuddy 每次请求都记模型，CodeBuddy 只记在会话上 · 点击看细节' : '按会话记录的模型归类 · 点击看细节'}</div>
         </div>
         <div className="tools">{models.length} 个模型</div>
       </div>
@@ -89,8 +89,8 @@ export function ModelCard({
         ) : (
           <>
             {dual
-              ? 'WorkBuddy 走请求级 model，CodeBuddy 回落会话级 selectedModelId；「未记录模型」全部来自 CodeBuddy 缺字段的会话，不猜测。'
-              : '模型归属来自会话的 selectedModelId；历史会话缺该字段时归入「未记录模型」，不猜测。'}
+              ? 'WorkBuddy 每次请求都带模型名，CodeBuddy 只记在会话上。「未记录模型」都来自 CodeBuddy 缺这个字段的会话，不猜。'
+              : '模型来自会话里的记录。老会话没写模型名，就归到「未记录模型」，不猜。'}
           </>
         )}
       </div>
