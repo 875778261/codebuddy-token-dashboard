@@ -43,52 +43,55 @@ export function Landing({
   return (
     <div className="landing" ref={ref}>
       <section className="hero">
-        <h2>本机 AI 用量总账，全部留在本机</h2>
+        <h2>AI 用量总账，数据不出这台电脑</h2>
         <p>
-          把 <b>CodeBuddy</b> 或 <b>WorkBuddy</b> 的数据目录<b>拖进窗口</b>（或选择它）。只给一端就看这一端；两端都给就合并成一份总账，并单独给出<b>端对比</b>。
-          浏览器直接读取请求级 <code>usage</code>，统计 Token、积分、缓存命中、项目与会话分布。
+          把 <b>CodeBuddy</b> 或 <b>WorkBuddy</b> 的文件夹<b>拖进窗口</b>。只给一个，就只看这一份；两个都给，就合成一份总账，
+          并多出一块<b>端对比</b>（两边比一比）。
+        </p>
+        <p>
+          统计 Token、积分、缓存命中、项目与会话分布。
         </p>
         <p className="privacy">
-          <b>解析与聚合只发生在你的浏览器里</b>，不上传、不离线缓存到任何服务器；关掉标签页就什么都没有。
+          <b>读取和统计都在你的浏览器里完成</b>：不上传，不写任何服务器；关掉页面就清空。
         </p>
 
         <PathList />
         <p style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 4 }}>
-          两端可以分两次拖：后拖的只更新自己那一端，不会重扫另一端。会话库只用于补 CodeBuddy 的标题与项目路径。
+          可以分两次拖：后拖的只更新自己那一边。会话库只用来补 CodeBuddy 的标题和项目路径。
         </p>
 
         <div className="hero-actions">
           <button type="button" className="btn primary" onClick={supportsDirectory ? onPickDirectory : onPickFallback} disabled={busy}>
             {busy ? <span className="spin" /> : null}
-            {busy ? '扫描中…' : supportsDirectory ? '选择数据目录' : '选择文件夹'}
+            {busy ? '读取中…' : '选择文件夹'}
           </button>
           <button type="button" className="btn" onClick={onImport} disabled={busy}>
-            导入快照 JSON
+            导入快照
           </button>
           <button type="button" className="btn ghost" onClick={onDemo} disabled={busy}>
-            先看示例数据
+            先看示例
           </button>
         </div>
 
         {status ? <div className={`status-line${status.error ? ' error' : ''}`}>{status.text}</div> : null}
 
         <div className="dropzone">
-          <b>{IS_FILE ? '当前是 file:// 打开，拖拽不可用' : '选不了 AppData？把文件夹直接拖进来'}</b>
+          <b>{IS_FILE ? '这个页面是直接打开的（file://），拖不进来' : '选不了 AppData？把文件夹直接拖进来'}</b>
           <span>
             {IS_FILE ? (
               <>
-                浏览器在 <code>file://</code> 下不会给拖入的目录创建文件系统条目，表现为"拖了没反应"。请改用 <kbd>npm run dev</kbd> 起本地服务后拖拽，或直接导入快照 JSON。
+                浏览器不认这种页面里拖进来的文件夹，表现就是"拖了没反应"。改用 <kbd>npm run dev</kbd> 起本地服务再拖，或者直接导入快照。
               </>
             ) : (
               <>
-                Chrome / Edge 会把 <code>AppData</code> 判定为系统目录，选择器直接拒绝（提示"此文件夹包含系统文件"）。<em>拖拽不受这个限制</em>：
-                把 <code>…\CodeBuddyExtension\Data</code> 拖到窗口任意位置即可；想要会话标题与项目路径，再把 <code>codebuddy-sessions.vscdb</code> 一起拖进来。
-                WorkBuddy 的 <code>~/.workbuddy</code> 一般可以直接选，也可以直接拖。
+                Chrome / Edge 会把 <code>AppData</code> 当成系统目录，选择器直接拒绝（提示"此文件夹包含系统文件"）。<em>拖进来不受这个限制</em>：
+                把 <code>…\CodeBuddyExtension\Data</code> 拖到窗口任意位置就行；想要标题和项目路径，再把 <code>codebuddy-sessions.vscdb</code> 一起拖。
+                WorkBuddy 的 <code>~/.workbuddy</code> 一般能直接选，也能直接拖。
               </>
             )}
           </span>
           <span style={{ display: 'block', marginTop: 6, color: 'var(--ink-4)' }}>
-            Chromium 系浏览器拖拽时会顺手给出目录句柄，因此拖完仍可用「重扫」拿最新用量；若某个环境没给句柄，页面会明确提示你把文件夹再拖一次。
+            Chrome / Edge 拖完会记住这个文件夹，所以之后还能点「重扫」拿最新用量。万一没记住，页面会提示你再拖一次。
           </span>
         </div>
 
@@ -107,7 +110,7 @@ export function Landing({
           </div>
           <div className="hint">
             <b>浏览器</b>
-            <span>{supportsDirectory ? '当前浏览器支持目录选择，下次会记住位置，可一键重扫。' : '当前环境不支持目录 API，已回退为「选择文件夹」文件框。'}</span>
+            <span>{supportsDirectory ? '这个浏览器能直接选文件夹，下次会记住位置，可以一键重扫。' : '这个浏览器不支持直接选文件夹，已改成用窗口选择。'}</span>
           </div>
         </div>
       </section>
@@ -115,19 +118,19 @@ export function Landing({
       <div className="feature-strip">
         <div className="feature">
           <b>请求级真值</b>
-          <span>直接读 <code>requests[].usage</code> 的 8 个字段，不做估算。</span>
+          <span>直接读记录里的 8 个用量字段，不做估算。</span>
         </div>
         <div className="feature">
           <b>缓存与积分效率</b>
-          <span>按模型看命中率、每百万 token 的积分消耗。</span>
+          <span>按模型看命中率、每百万 token 花多少积分。</span>
         </div>
         <div className="feature">
           <b>可携带快照</b>
-          <span>一键导出 JSON（含两端来源），换机、归档、离线分享都不丢。</span>
+          <span>一键导出 JSON（两端来源都在里面），换机、归档、离线分享都不丢。</span>
         </div>
         <div className="feature">
           <b>自带数据体检</b>
-          <span>逐源恒等式、重复记录、跨源合计一致性全部明示。</span>
+          <span>每份数据的加总、重复记录、合并后是否对得上，都写出来。</span>
         </div>
       </div>
     </div>

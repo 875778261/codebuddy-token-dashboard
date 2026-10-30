@@ -57,10 +57,10 @@ export function DropOverlay() {
         <div className="drop-icon">↓</div>
         <b>松手即读取</b>
         <span>
-          支持 <code>CodeBuddyExtension\Data</code>、<code>~/.workbuddy</code>（或其 <code>projects</code>）、
-          <code>codebuddy-sessions.vscdb</code>，或快照 JSON
+          可以拖 <code>CodeBuddyExtension\Data</code>、<code>~/.workbuddy</code>（或它里面的 <code>projects</code>）、
+          <code>codebuddy-sessions.vscdb</code>，或者快照 JSON
           <br />
-          两端可以分两次拖：后拖的只更新自己那一端
+          两边可以分两次拖：后拖的只更新自己那一边
         </span>
       </div>
     </div>

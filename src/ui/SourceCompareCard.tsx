@@ -52,7 +52,7 @@ const ROWS: Row[] = [
     value: (a) => fmtCredit(a.totals.credit),
     sub: (a) => `覆盖 ${fmtPct(creditCoverage(a), 0)} 请求`,
     diff: (a, b) => ratio(a.totals.credit, b.totals.credit),
-    hint: '覆盖率按请求数加权，两端不同；带覆盖率才能比',
+    hint: '两边的覆盖率不一样，看覆盖率才知道能不能比',
   },
   {
     label: '每百万 token 积分',
@@ -62,13 +62,13 @@ const ROWS: Row[] = [
       const y = b.totals.total ? b.totals.credit / b.totals.total : 0
       return ratio(x, y)
     },
-    hint: '受模型构成影响，跨端不可直接当"效率"',
+    hint: '受模型构成影响，不能直接当效率比',
   },
   {
     label: '会话（主 / sub）',
     value: (a) => `${fmtInt(a.totals.mainSessions)} / ${fmtInt(a.totals.subAgentSessions)}`,
     diff: (a, b) => `${b.totals.mainSessions - a.totals.mainSessions >= 0 ? '+' : ''}${b.totals.mainSessions - a.totals.mainSessions} 主会话`,
-    hint: 'subagent 会话不是 CodeBuddy 口径，必须分列',
+    hint: 'subagent 会话只有 WorkBuddy 有，所以分开列',
   },
 ]
 
@@ -102,22 +102,22 @@ export function SourceCompareCard({
             <h3>端对比</h3>
             <div className="sub">量差 · 同模型效率差 · 切换节奏</div>
           </div>
-          <div className="tools">{only ? `只载入 ${SOURCE_META[only].label}` : '没有数据'}</div>
+          <div className="tools">{only ? `只有 ${SOURCE_META[only].label}` : '没有数据'}</div>
         </div>
         <div className="src-empty">
-          <b>{only ? `还缺 ${SOURCE_META[missing].label}，暂时无法对比` : '还没有载入任何数据'}</b>
+          <b>{only ? `还缺 ${SOURCE_META[missing].label}，暂时没法比` : '还没有读入任何数据'}</b>
           <span>
             {only
-              ? `${SOURCE_META[only].label} 的统计已经在上面了。再把 ${SOURCE_META[missing].label} 的数据目录加进来，这块会显示两端在量、效率与使用节奏上的差异；已载入的一端不会被重扫。`
-              : '载入 CodeBuddy 或 WorkBuddy 任一端即可开始；两端都载入后自动出现端对比。'}
+              ? `${SOURCE_META[only].label} 的数字已经算在上面了。再加一个 ${SOURCE_META[missing].label} 文件夹，这里就会出现两边的用量、效率和切换节奏。已经读入的 ${SOURCE_META[only].label} 不会重读。`
+              : '读入 CodeBuddy 或 WorkBuddy 任一个就能开始；两个都读入后，这里自动出现端对比。'}
           </span>
           {/* 最需要路径的就是这一刻：把缺失那一端的入参路径直接摆出来，不用回初始页找 */}
           {only ? <PathBox item={importPathOf(missing)} /> : null}
           <button type="button" className="btn" onClick={onAdd} disabled={busy}>
-            添加数据目录
+            加一个文件夹
           </button>
         </div>
-        <div className="card-foot">单端视图只显示该端数字；账号积分口径只在双端合并后才有意义。</div>
+        <div className="card-foot">只读入一个时，这里只显示它自己的数字。积分要两边都读入、合并之后才有意义。</div>
       </section>
     )
   }
@@ -145,7 +145,7 @@ export function SourceCompareCard({
       <div className="card-head">
         <div>
           <h3>端对比</h3>
-          <div className="sub">同一窗口、同一套聚合代码；比率字段各自重算，绝不求和</div>
+          <div className="sub">同一个时间段、同一套算法；比率各自重算，不相加</div>
         </div>
         <div className="tools">合并 {fmtTokens(merged.totals.total)} token</div>
       </div>
@@ -198,7 +198,7 @@ export function SourceCompareCard({
         <div className="cmp-models">
           <div className="cmp-sub">
             <b>同模型对照</b>
-            <span>只比两端都出现的模型；跨模型的「每百万 token 积分」差异主要是模型构成，不是端效率</span>
+            <span>只比两边都出现的模型。跨模型比「每百万 token 积分」，比出来的多半是模型构成，不是端效率</span>
           </div>
           {shared.length === 0 ? (
             <div className="empty-state">两端没有同名模型，无法做效率对照</div>
@@ -259,7 +259,7 @@ export function SourceCompareCard({
       </div>
 
       <div className="card-foot">
-        积分是<b>已知积分</b>：两端共用同一积分账户，且各端字段覆盖不同，两个数字相加仍是账号消耗的下限，不是「总积分」；也不按比例外推。
+        这里的积分是<b>已知积分</b>：两边共用一个账户，字段覆盖也不一样，加起来只是账号消耗的下限，不是「总积分」，也不按比例推算。
       </div>
     </section>
   )

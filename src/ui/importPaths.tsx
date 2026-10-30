@@ -138,7 +138,7 @@ export function SourcePathsButton() {
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((v) => !v)}
-        title="查看并复制三个导入路径（换机、补另一端时不用回初始页）"
+        title="查看并复制三个路径（换机、补另一边时不用回开始页）"
       >
         路径
       </button>
@@ -146,13 +146,13 @@ export function SourcePathsButton() {
         <div
           className="path-pop"
           role="dialog"
-          aria-label="导入路径"
+          aria-label="数据位置"
           ref={popRef}
           style={shift ? { transform: `translateX(${shift}px)` } : undefined}
         >
           <div className="path-pop-head">
-            <b>导入路径</b>
-            <span>把文件夹拖进窗口任意位置即可，不必先打开它</span>
+            <b>数据位置</b>
+            <span>把文件夹拖进窗口任意位置，不用先打开它</span>
           </div>
           <div className="path-pop-list">
             {IMPORT_PATHS.map((item) => (
@@ -161,8 +161,8 @@ export function SourcePathsButton() {
           </div>
           <div className="path-pop-foot">
             {IS_FILE
-              ? 'file:// 下拖拽不可用：请用本地服务打开，或直接导入快照 JSON。'
-              : '两端可以分两次给：后给的一端只更新自己那一端，不会重扫另一端。'}
+              ? '直接打开的页面拖不了：用本地服务打开，或者直接导入快照。'
+              : '可以分两次给：后给的那份只更新自己那一边。'}
           </div>
         </div>
       ) : null}

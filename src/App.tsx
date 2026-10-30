@@ -227,34 +227,34 @@ export default function App() {
         if (ds.sessions.length) {
           next.codebuddy = ds
           changed.push('codebuddy')
-          notes.push(`CodeBuddy ${fmtInt(ds.selfCheck.requestsWithUsage)} 请求`)
+          notes.push(`${fmtInt(ds.selfCheck.requestsWithUsage)} 请求`)
         }
       } else if (res.sessionMeta.length && next.codebuddy) {
         // 只补了会话库：不重算任何 token
         next.codebuddy = applySessionMeta(next.codebuddy, res.sessionMeta, res.sessionsDbName)
         changed.push('codebuddy')
-        notes.push(`CodeBuddy 会话库 ${fmtInt(res.sessionMeta.length)} 条`)
+        notes.push(`会话库 ${fmtInt(res.sessionMeta.length)} 条`)
       }
 
       if (res.wbFiles.length) {
-        setStatus({ text: `正在解析 WorkBuddy ${fmtInt(res.wbFiles.length)} 个 jsonl…` })
+        setStatus({ text: `正在读取 WorkBuddy 的 ${fmtInt(res.wbFiles.length)} 个记录文件…` })
         const wb = await parseWorkbuddy(res.wbFiles, {
           sources: { historyRoots: res.roots.workbuddy, scannedAt: res.scannedAt },
           elapsedMs: Math.round(performance.now() - t0),
-          onProgress: (done, total) => setStatus({ text: `正在解析 WorkBuddy 记录 ${done}/${total} 个文件…` }),
+          onProgress: (done, total) => setStatus({ text: `正在读取 WorkBuddy：${done}/${total} 个文件…` }),
         })
         if (wb.sessions.length) {
           next.workbuddy = wb
           changed.push('workbuddy')
-          notes.push(`WorkBuddy ${fmtInt(wb.selfCheck.requestsWithUsage)} 请求`)
+          notes.push(`${fmtInt(wb.selfCheck.requestsWithUsage)} 请求`)
         }
       }
 
       if (!changed.length) {
         setStatus({
           text:
-            '没有在所选内容里找到可用用量。CodeBuddy 请选 CodeBuddyExtension\\Data（history/**/index.json）；' +
-            'WorkBuddy 请选 ~/.workbuddy 或它的 projects 目录（projects/**/*.jsonl）。',
+            '这里没有能读的用量记录。CodeBuddy 请选 CodeBuddyExtension\\Data；' +
+            'WorkBuddy 请选 ~/.workbuddy，或者它里面的 projects。',
           error: true,
         })
         return
@@ -267,7 +267,7 @@ export default function App() {
         for (const source of changed) next2[source] = roundAt
         return next2
       })
-      setStatus({ text: `已载入 ${[...new Set(changed)].map((s) => SOURCE_META[s].label).join(' + ')}：${notes.join(' · ')}` })
+      setStatus({ text: `已读入 ${[...new Set(changed)].map((s) => SOURCE_META[s].label).join(' + ')}：${notes.join(' · ')}` })
     },
     [persist],
   )
@@ -286,13 +286,13 @@ export default function App() {
       return
     }
     setBusy(true)
-    setStatus({ text: '等待选择目录…' })
+    setStatus({ text: '等你在窗口里选文件夹…' })
     // 选择器被系统目录拦下时 Promise 不会立刻 reject，这里给一句救援提示
     const rescue = window.setTimeout(() => {
       setStatus({
         text:
-          '如果浏览器提示「此文件夹包含系统文件」，说明 AppData 被拦住：关掉对话框，直接把 Data 文件夹拖进窗口即可。' +
-          'WorkBuddy 的 ~/.workbuddy 通常可以直接选。',
+          '如果浏览器说「此文件夹包含系统文件」，就是 AppData 被拦住了：关掉对话框，把 Data 文件夹直接拖进窗口。' +
+          'WorkBuddy 的 ~/.workbuddy 一般能直接选。',
       })
     }, 12_000)
     try {
@@ -311,10 +311,10 @@ export default function App() {
       const name = (err as DOMException)?.name
       if (name === 'SecurityError' || name === 'NotAllowedError') {
         // file:// 打开或权限策略限制时，目录 API 不可用 → 回落到 <input webkitdirectory>
-        setStatus({ text: '当前环境不支持目录选择，已切换为「选择文件夹」文件框（数据一样只在本地解析）。' })
+        setStatus({ text: '这个浏览器不能直接选文件夹，已改用窗口选择。数据仍然只在本地读取。' })
         folderInputRef.current?.click()
       } else {
-        setStatus({ text: `扫描失败：${(err as Error)?.message ?? err}`, error: true })
+        setStatus({ text: `读取失败：${(err as Error)?.message ?? err}`, error: true })
       }
     } finally {
       window.clearTimeout(rescue)
@@ -328,8 +328,8 @@ export default function App() {
       if (!targets.length) {
         setStatus({
           text: dataset?.isDemo
-            ? '示例数据没有真实路径，无法重扫。把 Data 或 ~/.workbuddy 文件夹拖进窗口，或点「重置」回初始页。'
-            : '当前数据没有可复用的目录句柄（来自快照导入或「文件夹」文件框）。刷新方式：把目录再拖进窗口，或点「目录」重选。',
+            ? '示例数据没有真实路径，重扫不了。把 Data 或 ~/.workbuddy 拖进窗口，或者点「重置」回开始页。'
+            : '这份数据没记住文件夹（来自快照导入或窗口选择）。想刷新，把文件夹再拖进窗口，或者点「加文件夹」重选。',
         })
         return
       }
@@ -341,7 +341,7 @@ export default function App() {
           const dir = dirRefs.current[source]!
           if (!(await ensurePermission(dir))) {
             setHasDir((prev) => ({ ...prev, [source]: false }))
-            setStatus({ text: `${SOURCE_META[source].label} 的目录权限被浏览器收回，点「目录」重新选一次即可恢复一键重扫。`, error: true })
+            setStatus({ text: `浏览器收回了 ${SOURCE_META[source].label} 的文件夹权限，点「加文件夹」重选一次就能继续一键重扫。`, error: true })
             continue
           }
           setStatus({ text: `正在重扫 ${SOURCE_META[source].label}…` })
@@ -351,7 +351,7 @@ export default function App() {
           await ingest(res, roundAt)
         }
       } catch (err) {
-        setStatus({ text: `重新扫描失败：${(err as Error)?.message ?? err}`, error: true })
+        setStatus({ text: `重扫失败：${(err as Error)?.message ?? err}`, error: true })
       } finally {
         setBusy(false)
       }
@@ -363,7 +363,7 @@ export default function App() {
     async (list: FileList | null) => {
       if (!list || !list.length) return
       setBusy(true)
-      setStatus({ text: '正在读取所选文件夹…' })
+      setStatus({ text: '正在读取你选的文件夹…' })
       try {
         const res = await scanFileList(list)
         await ingest(res)
@@ -377,7 +377,7 @@ export default function App() {
   )
 
   const handleAddSessionsDb = useCallback(async () => {
-    setStatus({ text: '等待选择 codebuddy-sessions.vscdb…' })
+    setStatus({ text: '等你选 codebuddy-sessions.vscdb…' })
     try {
       const picked = await pickSessionsDb()
       if (!picked) {
@@ -386,7 +386,7 @@ export default function App() {
       }
       const current = slicesRef.current
       if (!current?.codebuddy) {
-        setStatus({ text: '请先扫描一次 CodeBuddy 数据目录，再补充会话库。', error: true })
+        setStatus({ text: '先读一次 CodeBuddy 的数据文件夹，再补会话库。', error: true })
         return
       }
       persist({ ...current, codebuddy: applySessionMeta(current.codebuddy, picked.sessionMeta, picked.name) })
@@ -439,15 +439,15 @@ export default function App() {
             persist({ ...current, codebuddy: applySessionMeta(current.codebuddy, res.sessionMeta, res.sessionsDbName) })
             setStatus({ text: `已补入 CodeBuddy 会话库 ${fmtInt(res.sessionMeta.length)} 条` })
           } else {
-            setStatus({ text: '只读到了会话库：还需要把 CodeBuddyExtension\\Data 目录一起拖进来才能看到用量。', error: true })
+            setStatus({ text: '只读到会话库，还看不到用量：把 CodeBuddyExtension\\Data 一起拖进来。', error: true })
           }
           return
         }
 
         setStatus({
           text:
-            '没有在拖入的内容里找到用量。支持：CodeBuddyExtension\\Data（history/**/index.json）、' +
-            '~/.workbuddy 或 projects（projects/**/*.jsonl）、codebuddy-sessions.vscdb、快照 JSON。',
+            '拖进来的内容里没有用量记录。可以拖：CodeBuddyExtension\\Data、~/.workbuddy（或它里面的 projects）、' +
+            'codebuddy-sessions.vscdb，或者快照 JSON。',
           error: true,
         })
       } catch (err) {
@@ -666,25 +666,25 @@ export default function App() {
                 className="btn ghost"
                 onClick={() => void handleRescan()}
                 disabled={busy}
-                title={canRescan ? '按上次的目录重新扫描，读到最新用量' : '当前数据没有可复用的目录句柄：点一下会提示怎么刷新'}
+                title={canRescan ? '用上次记住的文件夹再读一次，拿最新用量' : '这份数据没记住文件夹，点一下会告诉你怎么刷新'}
               >
                 {busy ? <span className="spin" /> : '↻'} 重扫
               </button>
-              <button type="button" className="btn ghost" onClick={() => void handlePickDirectory()} disabled={busy} title="选择或新增一个数据目录（自动识别 CodeBuddy / WorkBuddy）">
-                目录
+              <button type="button" className="btn ghost" onClick={() => void handlePickDirectory()} disabled={busy} title="选一个数据文件夹，自动认出是 CodeBuddy 还是 WorkBuddy">
+                加文件夹
               </button>
               <SourcePathsButton />
               <button type="button" className="btn ghost" onClick={handleExport} title="导出快照 JSON">
                 导出
               </button>
-              <button type="button" className="btn ghost" onClick={handleReset} title="清除本地缓存并回到初始页（不影响磁盘上的原始数据）">
+              <button type="button" className="btn ghost" onClick={handleReset} title="清除本地缓存，回到开始页（不动磁盘上的原始数据）">
                 重置
               </button>
               <button
                 type="button"
                 className={`btn ghost${auto ? ' on' : ''}`}
                 onClick={() => setAuto(!auto)}
-                title="每 5 分钟自动重扫（需要保留目录权限）"
+                title="每 5 分钟自动重扫（需要保留文件夹权限）"
                 style={auto ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
               >
                 自动
@@ -730,7 +730,7 @@ export default function App() {
           <div className="stack" ref={stackRef}>
             {dataset.isDemo ? (
               <div className="banner info">
-                当前是<b>示例数据</b>（合成的双端用量，不含任何真实路径），仅用于预览界面，不会写入本地缓存。
+                这些是<b>示例数据</b>（合成的用量，不含任何真实路径），只用来预览界面，不会存进本地缓存。
                 <button type="button" className="btn" onClick={handleReset}>
                   退出示例
                 </button>
@@ -740,11 +740,11 @@ export default function App() {
             {restored && !dataset.isDemo ? (
               <div className="banner info">
                 {canRescan
-                  ? '已恢复上次扫描结果（缓存快照）。点「重扫」读取最新用量。'
-                  : '已恢复上次扫描结果（缓存快照）。这份数据没有可复用的目录句柄，想刷新请把数据目录再拖进窗口。'}
+                  ? '已恢复上次的结果（来自本地缓存）。点「重扫」读最新用量。'
+                  : '已恢复上次的结果（来自本地缓存）。这份数据没记住文件夹，想刷新就把文件夹再拖进窗口。'}
                 {canRescan ? (
                   <button type="button" className="btn" onClick={() => void handleRescan()} disabled={busy}>
-                    {busy ? '扫描中…' : '重新扫描'}
+                    {busy ? '读取中…' : '重扫'}
                   </button>
                 ) : null}
               </div>
@@ -752,10 +752,10 @@ export default function App() {
 
             {slices?.codebuddy && !dataset.bySource.codebuddy?.info.sessionsDb ? (
               <div className="banner">
-                未提供 <code>codebuddy-sessions.vscdb</code>：CodeBuddy 的标题与项目路径暂缺。把该文件从
-                <code>%APPDATA%\CodeBuddy CN\</code> <b>直接拖进窗口</b>即可补上（AppData 是系统目录，选择器打不开它）。
+                没有 <code>codebuddy-sessions.vscdb</code>：CodeBuddy 的标题和项目路径先空着。把这个文件从
+                <code>%APPDATA%\CodeBuddy CN\</code> <b>直接拖进窗口</b>就能补上（AppData 是系统目录，选择器打不开）。
                 <button type="button" className="btn" onClick={() => void handleAddSessionsDb()}>
-                  仍然尝试选择文件
+                  还是试试选文件
                 </button>
               </div>
             ) : null}
@@ -763,7 +763,7 @@ export default function App() {
             {status?.error ? <div className="banner" style={{ borderLeftColor: 'var(--danger)' }}>{status.text}</div> : null}
 
             {agg.requestCountInWindow === 0 ? (
-              <div className="banner">当前时间窗口内没有请求记录。试试切换到「全部」，或把日期区间放宽。</div>
+              <div className="banner">这个时间段里没有请求。试试切到「全部」，或者把日期放宽。</div>
             ) : null}
 
             <KpiRow agg={agg} />
@@ -796,7 +796,7 @@ export default function App() {
 
       <footer className="foot">
         <span>
-          {dataset ? `窗口：${agg?.window.label} · ${dataset.coverage.first ?? '—'} → ${dataset.coverage.last ?? '—'}` : '等待选择数据目录'}
+          {dataset ? `窗口：${agg?.window.label} · ${dataset.coverage.first ?? '—'} → ${dataset.coverage.last ?? '—'}` : '还没选数据文件夹'}
           {dataset?.generatedAt ? ` · 快照生成于 ${new Date(dataset.generatedAt).toLocaleString('zh-CN')}` : ''}
         </span>
       </footer>
