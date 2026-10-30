@@ -13,7 +13,8 @@
     "bridge": "node scripts/bridge.mjs",
     "collect": "tsx scripts/collect.ts",
     "deploy:dry": "npm run build && wrangler deploy --dry-run",
-    "deploy:manual": "npm run build && wrangler deploy"
+    "deploy:manual": "npm run build && wrangler deploy",
+    "deploy:pages": "npm run build && wrangler pages deploy dist --project-name codebuddy-token-dashboard --branch main"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
