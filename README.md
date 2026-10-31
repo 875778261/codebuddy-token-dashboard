@@ -4,9 +4,12 @@
 
 **把 CodeBuddy、WorkBuddy 留在本机的用量记录，读成一份逐请求可核对的总账。**
 
-<sub>纯前端 · 零上传 · 单文件产物 · 数据不出这台电脑</sub>
+### [在线打开 →](https://875778261.github.io/codebuddy-token-dashboard/) &nbsp;&nbsp;·&nbsp;&nbsp; [下载离线版](https://github.com/875778261/codebuddy-token-dashboard/releases/latest)
+
+<sub>在线版免安装，点开就能用 · 离线版是单个 HTML（约 921 KB），双击就能打开 · 纯前端零上传，数据不出这台电脑</sub>
 
 [![在线试用](https://img.shields.io/badge/live_demo-github.io-4f5df0)](https://875778261.github.io/codebuddy-token-dashboard/)
+[![离线版](https://img.shields.io/github/v/release/875778261/codebuddy-token-dashboard?label=offline&color=8957e5)](https://github.com/875778261/codebuddy-token-dashboard/releases/latest)
 ![纯前端](https://img.shields.io/badge/pure_frontend-zero_upload-0d9d92)
 ![测试](https://img.shields.io/badge/tests-52_passed-2ea44f)
 ![体积](https://img.shields.io/badge/dist-%3C1_MB-6e7781)
@@ -34,13 +37,22 @@
 
 ## 快速开始
 
+不用装任何东西，两种用法任选：
+
+| 入口 | 怎么用 | 适合 |
+|---|---|---|
+| **在线打开** | 打开 <https://875778261.github.io/codebuddy-token-dashboard/>，点「先看示例」看合成的示例用量（不含任何真实路径） | 先看效果、日常使用 |
+| **离线单文件** | [下载 `index.html`](https://github.com/875778261/codebuddy-token-dashboard/releases/latest/download/index.html)（或去 [Releases](https://github.com/875778261/codebuddy-token-dashboard/releases/latest) 取），放到本机双击打开 | 断网、内网、随身带走 |
+
+离线版是用 `file://` 打开的：**拖入在 `file://` 下不工作**，数据走「快照」——在在线版里拖入后点「导出快照」，把生成的 JSON 拖进离线版即可。在线版没有这个限制。
+
+要从源码跑：
+
 ```bash
 npm install
 npm run dev          # http://localhost:5173
 npm run build        # 产出单个 dist/index.html（不到 1 MB，可离线双击打开）
 ```
-
-不想装任何东西，先看效果：打开 <https://875778261.github.io/codebuddy-token-dashboard/>，点「先看示例」——那是合成的示例用量，不含任何真实路径。
 
 进页面后有两种给数据的办法：
 
@@ -189,9 +201,12 @@ scripts/
 
 | 入口 | 地址 |
 |---|---|
-| **GitHub Pages**（演示地址） | <https://875778261.github.io/codebuddy-token-dashboard/> |
+| **GitHub Pages**（在线版） | <https://875778261.github.io/codebuddy-token-dashboard/> |
+| **GitHub Releases**（离线单文件） | <https://github.com/875778261/codebuddy-token-dashboard/releases/latest> |
 | Cloudflare Pages | <https://codebuddy-token-dashboard.pages.dev> |
 | Cloudflare Workers | <https://codebuddy-token-dashboard.875778261.workers.dev> |
+
+Release 附件固定叫 `index.html`，所以 `releases/latest/download/index.html` 永远指向最新版。发新版时 `npm run build` 后把 `dist/index.html` 作为同名附件传上去（`gh release create v0.1.1 dist/index.html`），文档里的链接不用改。
 
 国内入口还没落地：EdgeOne 默认域名是 3 小时限时预览、裸链接 401，绑上已备案域名才算常驻。构建设置与踩坑记录在 [`docs/deploy.md`](docs/deploy.md)。
 
