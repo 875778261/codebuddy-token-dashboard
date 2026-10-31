@@ -225,7 +225,7 @@ npx wrangler login      # 首次：OAuth 授权（或改用 CLOUDFLARE_API_TOKEN
 npm run deploy:manual   # build + wrangler deploy
 ```
 
-SPA 深层路径回落：Workers 侧由 `wrangler.jsonc` 的 `not_found_handling` 负责，Pages 侧由 `public/_redirects` 负责。
+SPA 深层路径回落只由 `wrangler.jsonc` 的 `assets.not_found_handling: "single-page-application"` 负责。**不要再往 `public/` 放 `_redirects`**：Vite 会把它原样复制进 `dist/`，而 Workers 在版本上传阶段会校验该文件，`/* /index.html 200` 会因为目标被规范化为 `/` 再次命中 `/*` 而报 `Infinite loop detected in this rule`（code 100324），表现为"构建成功、部署失败"。Pages 侧不需要该文件：应用没有客户端路由，任何路径都只打开同一个入口。
 
 </details>
 
