@@ -6,7 +6,7 @@
 
 <sub>纯前端 · 零上传 · 单文件产物 · 数据不出这台电脑</sub>
 
-[![在线试用](https://img.shields.io/badge/live_demo-pages.dev-4f5df0)](https://codebuddy-token-dashboard.pages.dev)
+[![在线试用](https://img.shields.io/badge/live_demo-github.io-4f5df0)](https://875778261.github.io/codebuddy-token-dashboard/)
 ![纯前端](https://img.shields.io/badge/pure_frontend-zero_upload-0d9d92)
 ![测试](https://img.shields.io/badge/tests-52_passed-2ea44f)
 ![体积](https://img.shields.io/badge/dist-%3C1_MB-6e7781)
@@ -40,7 +40,7 @@ npm run dev          # http://localhost:5173
 npm run build        # 产出单个 dist/index.html（不到 1 MB，可离线双击打开）
 ```
 
-不想装任何东西，先看效果：打开 <https://codebuddy-token-dashboard.pages.dev>，点「先看示例」——那是合成的示例用量，不含任何真实路径。
+不想装任何东西，先看效果：打开 <https://875778261.github.io/codebuddy-token-dashboard/>，点「先看示例」——那是合成的示例用量，不含任何真实路径。
 
 进页面后有两种给数据的办法：
 
@@ -185,74 +185,20 @@ scripts/
 
 ## 部署
 
-产物是单个 `dist/index.html`。线上以 **Cloudflare Workers Builds（Git 集成）** 为唯一主入口：Cloudflare 拉 `main` 构建并发布，本地不手动 deploy，避免两个入口互相覆盖版本历史。
+产物是单个 `dist/index.html`。GitHub Pages 与 Cloudflare Workers 由 push `main` 自动构建；Cloudflare Pages 走本地 `npm run deploy:pages`。
 
-| 入口 | 地址 | 无代理可用 | 部署方式 |
-|---|---|---|---|
-| **Cloudflare Pages（无代理首选）** | <https://codebuddy-token-dashboard.pages.dev> | 是，实测 200 / 2~4s | `npm run deploy:pages` |
-| Cloudflare Workers | <https://codebuddy-token-dashboard.875778261.workers.dev> | 否 | push `main` 自动，或 `npm run deploy:manual` |
-| GitHub Pages（备份镜像） | <https://875778261.github.io/codebuddy-token-dashboard/> | 慢，实测 30s | push `main` 自动（`.github/workflows/pages.yml`） |
-
-本地只需要校验配置和产物，不上传、不切线上：
-
-```bash
-npm run deploy:dry      # build + wrangler deploy --dry-run
-```
-
-<details>
-<summary><b>构建设置与两条硬性约束（点开）</b></summary>
-
-```
-Dashboard → Workers & Pages → codebuddy-token-dashboard
-         → Settings → Builds → Connect → 选 875778261/codebuddy-token-dashboard
-```
-
-| 构建设置 | 值 |
+| 入口 | 地址 |
 |---|---|
-| Production branch | `main` |
-| Build command | `npm run build` |
-| Deploy command | `npx wrangler deploy` |
+| **GitHub Pages**（演示地址） | <https://875778261.github.io/codebuddy-token-dashboard/> |
+| Cloudflare Pages | <https://codebuddy-token-dashboard.pages.dev> |
+| Cloudflare Workers | <https://codebuddy-token-dashboard.875778261.workers.dev> |
 
-免费计划为 3000 构建分钟/月、并发 1、单次超时 20 分钟。非 `main` 分支自动触发 Preview 构建，只出预览 URL，不切线上。
-
-- Dashboard 里的 Worker 名称必须与 `wrangler.jsonc` 的 `name` 完全一致（当前均为 `codebuddy-token-dashboard`）；
-- `wrangler.jsonc` 必须在仓库里，否则 Cloudflare 的 autoconfig 会先开一个 PR 补配置。
-
-Git 集成不可用时才手动部署，用完记得让 `main` 与线上重新对齐，否则下一次 push 会覆盖掉这次手动版本：
-
-```bash
-npx wrangler login      # 首次：OAuth 授权（或改用 CLOUDFLARE_API_TOKEN）
-npm run deploy:manual   # build + wrangler deploy
-```
-
-SPA 深层路径回落只由 `wrangler.jsonc` 的 `assets.not_found_handling: "single-page-application"` 负责。**不要再往 `public/` 放 `_redirects`**：Vite 会把它原样复制进 `dist/`，而 Workers 在版本上传阶段会校验该文件，`/* /index.html 200` 会因为目标被规范化为 `/` 再次命中 `/*` 而报 `Infinite loop detected in this rule`（code 100324），表现为"构建成功、部署失败"。Pages 侧不需要该文件：应用没有客户端路由，任何路径都只打开同一个入口。
-
-</details>
-
-<details>
-<summary><b>网络事实：为什么 pages.dev 是首选入口（2026-10-30 实测）</b></summary>
-
-用**同一个 Cloudflare 边缘 IP `104.18.21.135`、只换 SNI** 做对照，结论是**阻断按 SNI 关键词，不按 IP**：
-
-| SNI | 同一 IP 下的握手结果 |
-|---|---|
-| `*.workers.dev` | ClientHello 后被 RST（curl exit 35） |
-| `*.pages.dev` | 成功（530 = Cloudflare「未知主机」页） |
-| 任意普通域名 | 成功（530） |
-
-- `*.workers.dev`：**DNS 投毒 + SNI 阻断**双重失效。投毒在链路层——`8.8.8.8:53` 与阿里 DoH `223.5.5.5` 都返回伪造地址（Facebook AS 段、`face:b00c` 的 IPv6、Teredo 前缀），**换 DNS 服务器无用**；改 hosts 也无用，因为指向真实边缘 IP 后 SNI 仍被 RST。
-- `*.pages.dev`：**不受影响**，是无代理下的可用入口。旧文档「换 Pages 也不能解决」是误判，源于一次 `pages.dev` exit 35 的偶发失败、未做交叉验证。
-- `*.github.io`：DNS 干净但极慢（30s 才 200），仅作备份；`github.com` 无代理下 IPv4 直接不通，`git push` 与 `gh` 需开代理。
-- `dash.cloudflare.com` / `api.cloudflare.com` / `registry.npmjs.org` 直连正常：**部署与依赖安装不依赖代理**。
-- 本机裸 `curl` 打不通 Workers 地址**不代表部署失败**。
-
-有托管在 Cloudflare 的域名时，可在 `wrangler.jsonc` 加 `routes`（`{ "pattern": "dash.example.com", "custom_domain": true }`）直连；SNI 不含被拦关键词即可无代理访问。
-
-</details>
+国内入口还没落地：EdgeOne 默认域名是 3 小时限时预览、裸链接 401，绑上已备案域名才算常驻。构建设置与踩坑记录在 [`docs/deploy.md`](docs/deploy.md)。
 
 ## 文档
 
 - [`GLOSSARY.md`](GLOSSARY.md)：领域术语表（数据源、切片、合并视图、端对比、已知积分、无记录日）。
 - [`docs/COPY.md`](docs/COPY.md)：界面文案规范与禁用词，`npm run lint:copy` 是它的执行者。
+- [`docs/deploy.md`](docs/deploy.md)：部署入口、构建设置、网络实况与踩坑记录。
 - [`docs/codebuddy-ide-data-sources.md`](docs/codebuddy-ide-data-sources.md) / [`docs/workbuddy-data-sources.md`](docs/workbuddy-data-sources.md)：两个数据源的勘察报告，所有口径的一手依据。
 - [`docs/adr/`](docs/adr/)：架构决策记录，从 [0001](docs/adr/0001-playwright-install-scope.md) 起。
