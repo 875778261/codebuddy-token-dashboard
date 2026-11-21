@@ -1,6 +1,7 @@
 import type { LazyFile, ScannedFile } from '../core/parse'
 import { parseSessionsDb } from '../core/sessions'
 import type { SessionMeta } from '../core/types'
+import { isCliLogPath, isCliTracePath } from '../core/cliParse'
 
 /**
  * 拖拽通道：浏览器对 AppData 这类系统目录会拒绝弹选择器（"文件夹包含系统文件"），
@@ -15,6 +16,9 @@ const MAX_DEPTH = 16
 const MAX_INDEX_FILES = 4000
 const READ_CONCURRENCY = 8
 const WB_ROOT = '.workbuddy'
+/** CLI 数据根：只进 logs / traces，其余（skills/plugins/projects/models.json）一律不进 */
+const CB_CLI_ROOT = '.codebuddy'
+const CB_CLI_SUBDIRS = new Set(['logs', 'traces'])
 
 const SKIP_DIRS = new Set([
   'node_modules',
@@ -57,6 +61,8 @@ interface EntryLike {
 export interface DropResult {
   cbFiles: ScannedFile[]
   wbFiles: LazyFile[]
+  cliLogs: LazyFile[]
+  cliTraces: LazyFile[]
   sessionMeta: SessionMeta[]
   sessionsDbName?: string
   /** 拖进来的 .json（快照）文件，交给上层决定是否导入 */
@@ -64,7 +70,7 @@ export interface DropResult {
   /** 拖进来的名字，用于提示 */
   roots: string[]
   /** 命中的根（相对拖入根），供"数据体检"展示 */
-  historyRoots: { codebuddy: string[]; workbuddy: string[] }
+  historyRoots: { codebuddy: string[]; codebuddyCli: string[]; workbuddy: string[] }
   scannedAt: string
   elapsedMs: number
 }
@@ -138,8 +144,11 @@ export async function scanDrop(
   const jsonFiles: File[] = []
   const cbRoots = new Set<string>()
   const wbRoots = new Set<string>()
+  const cliRoots = new Set<string>()
   const cbPending: Array<{ path: string[]; file: File }> = []
   const wbPending: Array<{ path: string[]; file: File }> = []
+  const cliLogPending: Array<{ path: string[]; file: File }> = []
+  const cliTracePending: Array<{ path: string[]; file: File }> = []
   let dbFile: File | null = null
   let sessionsDbName: string | undefined
   let visited = 0
@@ -190,6 +199,16 @@ export async function scanDrop(
         }
         return
       }
+      if (isCliLogPath(path) || isCliTracePath(path)) {
+        const file = await fileOf(entry)
+        if (file) {
+          const idx = path.lastIndexOf('logs')
+          if (idx >= 0) cliRoots.add(path.slice(0, idx + 1).join('/') || 'logs')
+          if (isCliTracePath(path)) cliTracePending.push({ path, file })
+          else cliLogPending.push({ path, file })
+        }
+        return
+      }
       // 快照候选：排除 WorkBuddy 的 <sessionId>.meta.json 之类噪音
       if (/\.json$/i.test(entry.name) && !/\.meta\.json$/i.test(entry.name)) {
         const file = await fileOf(entry)
@@ -201,9 +220,13 @@ export async function scanDrop(
     const children = await readEntries(entry.createReader())
     for (const child of children) {
       if (child.isDirectory) {
-        if (SKIP_DIRS.has(child.name) || (child.name.startsWith('.') && child.name !== WB_ROOT)) continue
+        if (SKIP_DIRS.has(child.name) || (child.name.startsWith('.') && child.name !== WB_ROOT && child.name !== CB_CLI_ROOT)) continue
         if (child.name === WB_ROOT) {
           await walkWorkbuddyRoot(child, [...path, child.name], depth + 1)
+          continue
+        }
+        if (child.name === CB_CLI_ROOT) {
+          await walkCliRoot(child, [...path, child.name], depth + 1)
           continue
         }
         await walk(child, [...path, child.name], depth + 1)
@@ -233,6 +256,16 @@ export async function scanDrop(
           const idx = childPath.lastIndexOf('projects')
           if (idx >= 0) wbRoots.add(childPath.slice(0, idx + 1).join('/') || 'projects')
         }
+        continue
+      }
+      if (isCliLogPath(childPath) || isCliTracePath(childPath)) {
+        const file = await fileOf(child)
+        if (file) {
+          const idx = childPath.lastIndexOf('logs')
+          if (idx >= 0) cliRoots.add(childPath.slice(0, idx + 1).join('/') || 'logs')
+          if (isCliTracePath(childPath)) cliTracePending.push({ path: childPath, file })
+          else cliLogPending.push({ path: childPath, file })
+        }
       }
     }
   }
@@ -248,8 +281,19 @@ export async function scanDrop(
     }
   }
 
+  /** .codebuddy 根只走 logs / traces：projects 是空壳，models.json 里有 apiKey，都不进 */
+  async function walkCliRoot(entry: EntryLike, path: string[], depth: number) {
+    if (!entry.createReader) return
+    const children = await readEntries(entry.createReader())
+    for (const child of children) {
+      if (!child.isDirectory || !CB_CLI_SUBDIRS.has(child.name)) continue
+      await walk(child, [...path, child.name], depth + 1)
+    }
+  }
+
   for (const root of roots) {
     if (root.isDirectory && root.name === WB_ROOT) await walkWorkbuddyRoot(root, [root.name], 0)
+    else if (root.isDirectory && root.name === CB_CLI_ROOT) await walkCliRoot(root, [root.name], 0)
     else await walk(root, [root.name], 0)
   }
 
@@ -281,15 +325,17 @@ export async function scanDrop(
     }
   }
 
-  onProgress?.('读取完成', cbFiles.length + wbPending.length, cbFiles.length + wbPending.length)
+  onProgress?.('读取完成', cbFiles.length + wbPending.length + cliLogPending.length, cbFiles.length + wbPending.length + cliLogPending.length)
   return {
     cbFiles,
     wbFiles: wbPending.map((item) => ({ path: item.path, read: () => item.file.text() })),
+    cliLogs: cliLogPending.map((item) => ({ path: item.path, read: () => item.file.text() })),
+    cliTraces: cliTracePending.map((item) => ({ path: item.path, read: () => item.file.text() })),
     sessionMeta,
     sessionsDbName,
     jsonFiles,
     roots: roots.map((r) => r.name),
-    historyRoots: { codebuddy: [...cbRoots].sort(), workbuddy: [...wbRoots].sort() },
+    historyRoots: { codebuddy: [...cbRoots].sort(), codebuddyCli: [...cliRoots].sort(), workbuddy: [...wbRoots].sort() },
     scannedAt: new Date().toISOString(),
     elapsedMs: Math.round(performance.now() - started),
   }

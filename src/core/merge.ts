@@ -44,6 +44,8 @@ function addSelfCheck(a: SelfCheck, b: SelfCheck): SelfCheck {
     sessionsWithoutCwd: a.sessionsWithoutCwd + b.sessionsWithoutCwd,
     sessionsWithoutTitle: a.sessionsWithoutTitle + b.sessionsWithoutTitle,
     requestsWithoutCredit: a.requestsWithoutCredit + b.requestsWithoutCredit,
+    creditUnpaired: a.creditUnpaired + b.creditUnpaired,
+    archiveRequests: a.archiveRequests + b.archiveRequests,
     duplicateRequests: a.duplicateRequests + b.duplicateRequests,
     usageZeroFallbacks: a.usageZeroFallbacks + b.usageZeroFallbacks,
     subAgentSessions: a.subAgentSessions + b.subAgentSessions,
@@ -135,7 +137,7 @@ export function normalizeDataset(input: Dataset, fallbackSource: SourceId = 'cod
 
   return {
     ...input,
-    schemaVersion: 2,
+    schemaVersion: 3,
     sessions,
     selfCheck,
     coverage,
@@ -184,7 +186,7 @@ export function mergeSlices(slices: Dataset[]): Dataset {
   if (!ordered.length) {
     const selfCheck = emptySelfCheck()
     const info: SourceInfo = { historyRoots: [], projectCount: 0, convIndexCount: 0, sessionMetaCount: 0, scannedAt: new Date().toISOString(), elapsedMs: 0 }
-    return { schemaVersion: 2, generatedAt: new Date().toISOString(), sources: info, bySource: {}, sessions: [], selfCheck, coverage: { daysWithData: 0, daysInRange: 0, missingDays: [] } }
+    return { schemaVersion: 3, generatedAt: new Date().toISOString(), sources: info, bySource: {}, sessions: [], selfCheck, coverage: { daysWithData: 0, daysInRange: 0, missingDays: [] } }
   }
 
   const sessions = ordered.flatMap((d) => d.sessions).sort((a, b) => a.totals.firstTs - b.totals.firstTs)
@@ -207,7 +209,7 @@ export function mergeSlices(slices: Dataset[]): Dataset {
   }
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: new Date().toISOString(),
     sources: mergeSourceInfo(ordered.map((d) => d.sources)),
     bySource,

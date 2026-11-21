@@ -1,5 +1,6 @@
 import type { Aggregates } from '../core/aggregate'
 import { fmtInt, fmtPct, fmtTokens } from '../core/format'
+import { SOURCE_META, SOURCE_ORDER } from '../core/types'
 import type { Palette } from './theme'
 import { Sparkline } from './widgets'
 
@@ -14,7 +15,7 @@ export function ProjectCard({ agg, palette }: { agg: Aggregates; palette: Palett
         <div>
           <h3>项目分布</h3>
           <div className="sub">
-            {agg.projects.some((p) => p.path) ? '按文件夹路径归类（斜杠统一，大小写照原样）。标「两边」是这个项目两个工具都用过' : '没拿到项目路径，先按记录里的项目标识归类'}
+            {agg.projects.some((p) => p.path) ? '按文件夹路径归类（斜杠统一，大小写照原样）。标「多源」是这些源都用过这个项目' : '没拿到项目路径，先按记录里的项目标识归类'}
           </div>
         </div>
         <div className="tools">{agg.projects.length} 个项目</div>
@@ -25,13 +26,17 @@ export function ProjectCard({ agg, palette }: { agg: Aggregates; palette: Palett
       ) : (
         <div className="plist">
           {projects.map((p) => {
-            const cb = p.bySource.codebuddy ?? 0
-            const wb = p.bySource.workbuddy ?? 0
+            // 不写死两源：CLI 与 IDE 同属一个端，但仍是两个源，判定要逐源看
+            const srcs = SOURCE_ORDER.filter((s) => (p.bySource[s] ?? 0) > 0)
             return (
             <div className="prow" key={p.key} title={p.path ?? p.name}>
               <div className="nm">
                 {p.name}
-                {cb > 0 && wb > 0 ? <span className="badge both">两边</span> : null}
+                {srcs.length > 1 ? (
+                  <span className="badge both" title={srcs.map((s) => SOURCE_META[s].label).join(' + ')}>
+                    多源
+                  </span>
+                ) : null}
                 {p.path ? <em>{p.path.replace(/[\\/][^\\/]+$/, '') || '/'}</em> : null}
               </div>
               <Sparkline values={p.sparkline} color={color} />

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { aggregatesBySource, makeCustomWindow, makeWindow, type WindowPreset } from './core/aggregate'
+import { aggregatesByEnd, aggregatesBySource, makeCustomWindow, makeWindow, type WindowPreset } from './core/aggregate'
+import { endGaps, promptingSources, sourceStates } from './core/completeness'
 import { buildDemoDataset } from './core/demo'
 import { fmtInt, fmtTokens } from './core/format'
 import { applySessionMeta, buildDataset } from './core/parse'
 import { mergeSlices, splitBySource } from './core/merge'
 import { parseWorkbuddy } from './core/workbuddyParse'
+import { parseCli } from './core/cliParse'
 import { parseSnapshot, serializeDataset, snapshotFileName } from './core/snapshot'
 import { deriveFreshness } from './core/freshness'
 import { SOURCE_META, SOURCE_ORDER, type Dataset, type SourceId } from './core/types'
@@ -33,6 +35,7 @@ import {
   useTopbarIntro,
 } from './ui/motion'
 import { Landing } from './ui/Landing'
+import { MissingSources } from './ui/MissingSources'
 import { KpiRow } from './ui/KpiRow'
 import { TrendCard, type TrendMode } from './ui/TrendCard'
 import { ModelCard } from './ui/ModelCard'
@@ -78,6 +81,13 @@ export default function App() {
    * 用于把「本次刷新」和「沿用缓存」区分开（判定逻辑见 core/freshness.ts）。
    */
   const [touched, setTouched] = useState<Partial<Record<SourceId, number>>>({})
+  /** 用户明确说过「我没有这个源」的列表：只影响提示，不影响数据 */
+  const [declined, setDeclined] = useState<SourceId[]>(() => prefs.declinedSources() as SourceId[])
+  /**
+   * 当前数据从哪来。快照是自洽的一份数据（可能来自另一台机器），
+   * 拿它跟本机三个源比会永远「缺」——那两条路径下不提示缺源。
+   */
+  const [origin, setOrigin] = useState<'scan' | 'snapshot'>('scan')
 
   const dirRefs = useRef<DirMap>({})
   const slicesRef = useRef<SliceMap | null>(null)
@@ -126,14 +136,20 @@ export default function App() {
 
       const cb = await idbGet<FileSystemDirectoryHandle>(dirKey('codebuddy'))
       const wb = await idbGet<FileSystemDirectoryHandle>(dirKey('workbuddy'))
+      const cli = await idbGet<FileSystemDirectoryHandle>(dirKey('codebuddy-cli'))
       // 旧版本只有一个 dir 键，且只服务 CodeBuddy
       const legacyDir = await idbGet<FileSystemDirectoryHandle>('dir')
       if (alive) {
         const dirs: DirMap = {}
         if (cb ?? legacyDir) dirs.codebuddy = cb ?? legacyDir ?? undefined
         if (wb) dirs.workbuddy = wb
+        if (cli) dirs['codebuddy-cli'] = cli
         dirRefs.current = dirs
-        setHasDir({ codebuddy: Boolean(dirs.codebuddy), workbuddy: Boolean(dirs.workbuddy) })
+        setHasDir({
+          codebuddy: Boolean(dirs.codebuddy),
+          workbuddy: Boolean(dirs.workbuddy),
+          'codebuddy-cli': Boolean(dirs['codebuddy-cli']),
+        })
       }
     })()
     return () => {
@@ -159,6 +175,8 @@ export default function App() {
   const aggPair = useMemo(() => (dataset ? aggregatesBySource(dataset, win) : null), [dataset, win])
   const agg = aggPair?.merged ?? null
   const bySourceAgg = aggPair?.bySource ?? {}
+  /** 端对比跑在「端」层：CodeBuddy 端 = IDE + CLI，WorkBuddy 端 = WB */
+  const byEndAgg = useMemo(() => (dataset ? aggregatesByEnd(dataset, win) : {}), [dataset, win])
 
   const persist = useCallback((next: SliceMap | null) => {
     slicesRef.current = next
@@ -197,6 +215,24 @@ export default function App() {
     void idbDel('slices')
     void idbDel('dataset')
     void idbDel('dir')
+  }, [persist])
+
+  /**
+   * 只清 CLI 的归档，保留目录句柄：日志已轮转掉的历史会被丢掉，
+   * 下一轮重扫按当前日志重建（IDE / WorkBuddy 是全量重扫，本来就不需要归档）。
+   */
+  const handleClearArchive = useCallback(() => {
+    const base = slicesRef.current ?? {}
+    const next: SliceMap = { ...base }
+    delete next['codebuddy-cli']
+    persist(Object.keys(next).length ? next : null)
+    setTouched((prev) => {
+      const rest = { ...prev }
+      delete rest['codebuddy-cli']
+      return rest
+    })
+    scanRef.current = null
+    setStatus({ text: '已清空 CodeBuddy CLI 的归档。下一轮重扫只读当前还在的日志文件。' })
   }, [persist])
 
   /**
@@ -249,17 +285,36 @@ export default function App() {
         }
       }
 
+      if (res.cliLogs.length) {
+        setStatus({ text: `正在读取 CodeBuddy CLI 的 ${fmtInt(res.cliLogs.length)} 个日志文件…` })
+        const cli = await parseCli(res.cliLogs, res.cliTraces, {
+          sources: { historyRoots: res.roots.codebuddyCli, scannedAt: res.scannedAt },
+          elapsedMs: Math.round(performance.now() - t0),
+          // 日志会按天轮转：上一轮的结果就是这一轮的历史
+          archived: base['codebuddy-cli'] ?? null,
+          onProgress: (done, total) => setStatus({ text: `正在读取 CodeBuddy CLI：${done}/${total} 个文件…` }),
+        })
+        if (cli.sessions.length) {
+          next['codebuddy-cli'] = cli
+          changed.push('codebuddy-cli')
+          const fromArchive = cli.selfCheck.archiveRequests
+          notes.push(`${fmtInt(cli.selfCheck.requestsWithUsage)} 请求${fromArchive ? `（日志里只剩 ${fmtInt(cli.selfCheck.requestsWithUsage - fromArchive)}，其余来自归档）` : ''}`)
+        }
+      }
+
       if (!changed.length) {
         setStatus({
           text:
             '这里没有能读的用量记录。CodeBuddy 请选 CodeBuddyExtension\\Data；' +
-            'WorkBuddy 请选 ~/.workbuddy，或者它里面的 projects。',
+            'WorkBuddy 请选 ~/.workbuddy，或者它里面的 projects；' +
+            'CodeBuddy CLI 请选 ~/.codebuddy，或者它里面的 logs。',
           error: true,
         })
         return
       }
 
       scanRef.current = res
+      setOrigin('scan')
       persist(next)
       setTouched((prev) => {
         const next2 = { ...prev }
@@ -275,6 +330,7 @@ export default function App() {
     (res: ScanResult, dir: FileSystemDirectoryHandle | null) => {
       if (res.cbFiles.length) registerHandle('codebuddy', dir)
       if (res.wbFiles.length) registerHandle('workbuddy', dir)
+      if (res.cliLogs.length) registerHandle('codebuddy-cli', dir)
     },
     [registerHandle],
   )
@@ -411,14 +467,17 @@ export default function App() {
           persist({ ...(slicesRef.current ?? {}), ...split })
           // 快照里的时间是它自己生成时的，不是本会话扫的 → 一律按缓存展示
           setTouched({})
+          setOrigin('snapshot')
           setStatus({ text: `已导入快照：${Object.keys(split).map((s) => SOURCE_META[s as SourceId].label).join(' + ')}` })
           return
         }
 
-        if (res.cbFiles.length || res.wbFiles.length) {
+        if (res.cbFiles.length || res.wbFiles.length || res.cliLogs.length) {
           const scan: ScanResult = {
             cbFiles: res.cbFiles,
             wbFiles: res.wbFiles,
+            cliLogs: res.cliLogs,
+            cliTraces: res.cliTraces,
             sessionMeta: res.sessionMeta,
             sessionsDbName: res.sessionsDbName,
             roots: res.historyRoots,
@@ -505,6 +564,7 @@ export default function App() {
         const split = splitBySource(ds)
         persist({ ...(slicesRef.current ?? {}), ...split })
         setTouched({})
+        setOrigin('snapshot')
         setStatus({ text: `已导入快照：${Object.keys(split).map((s) => SOURCE_META[s as SourceId].label).join(' + ')}` })
       } catch (err) {
         setStatus({ text: `导入失败：${(err as Error)?.message ?? err}`, error: true })
@@ -574,6 +634,32 @@ export default function App() {
   const canRescan = SOURCE_ORDER.some((s) => hasDir[s])
   const showDashboard = Boolean(dataset && agg)
 
+  /**
+   * 数据完整度：只有「本机扫描/缓存恢复」这条路径才提示缺源。
+   * 快照是整份数据、示例是合成数据，拿它们比本机三个源等于把「选择」说成「遗漏」。
+   */
+  const promptMissing = Boolean(dataset) && !dataset!.isDemo && origin === 'scan'
+  const sourceStateList = useMemo(() => sourceStates(dataset, declined), [dataset, declined])
+  const missingSources = promptMissing ? promptingSources(sourceStateList) : []
+  const endGapList = promptMissing ? endGaps(sourceStateList) : []
+
+  const handleDeclineSource = useCallback((source: SourceId) => {
+    setDeclined((prev) => {
+      if (prev.includes(source)) return prev
+      const next = [...prev, source]
+      prefs.setDeclinedSources(next)
+      return next
+    })
+  }, [])
+
+  const handleRestoreSource = useCallback((source: SourceId) => {
+    setDeclined((prev) => {
+      const next = prev.filter((s) => s !== source)
+      prefs.setDeclinedSources(next)
+      return next
+    })
+  }, [])
+
   // 动效：顶栏入场、滚动进度、卡片分批浮现、主题按钮翻身
   useTopbarIntro(topbarRef)
   useScrollProgress(progressRef)
@@ -596,8 +682,11 @@ export default function App() {
               <div className="meta">
                 {dataset && agg
                   ? `${loadedSources.map((s) => SOURCE_META[s].label).join(' + ') || '无数据'} · ${fmtInt(agg.totals.requests)} 请求 · ${fmtTokens(agg.totals.total)} token`
-                  : 'CodeBuddy + WorkBuddy · 纯前端 · 数据不出本机'}
+                  : 'CodeBuddy + CodeBuddy CLI + WorkBuddy · 纯前端 · 数据不出本机'}
               </div>
+              {missingSources.length ? (
+                <div className="meta meta-miss">还缺 {missingSources.map((s) => SOURCE_META[s].label).join(' / ')}</div>
+              ) : null}
               {dataset && agg && !dataset.isDemo ? <FreshnessChips freshness={freshness} /> : null}
             </div>
           </div>
@@ -754,7 +843,17 @@ export default function App() {
 
             <KpiRow agg={agg} />
 
-            <SourceCompareCard merged={agg} bySource={bySourceAgg} palette={palette} onAdd={() => void handlePickDirectory()} busy={busy} />
+            {/* 路径条不受「告警」的开关限制：快照/示例下也照常给出其余源的位置 */}
+            <MissingSources states={sourceStateList} onDecline={handleDeclineSource} onRestore={handleRestoreSource} />
+
+            <SourceCompareCard
+              merged={agg}
+              byEnd={byEndAgg}
+              bySource={bySourceAgg}
+              palette={palette}
+              onAdd={() => void handlePickDirectory()}
+              busy={busy}
+            />
 
             <div className="grid two">
               <TrendCard agg={agg} palette={palette} mode={trendMode} onMode={setTrendMode} />
@@ -770,7 +869,14 @@ export default function App() {
 
             <div className="grid two right-wide">
               <DistCard agg={agg} palette={palette} />
-              <HealthCard dataset={dataset} agg={agg} freshness={freshness} onExport={handleExport} />
+              <HealthCard
+                dataset={dataset}
+                agg={agg}
+                freshness={freshness}
+                onExport={handleExport}
+                onClearArchive={dataset.bySource['codebuddy-cli'] ? handleClearArchive : undefined}
+                endGapList={endGapList}
+              />
             </div>
           </div>
         )}

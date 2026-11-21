@@ -2,7 +2,7 @@
 
 # Buddy 用量看板
 
-**把 CodeBuddy、WorkBuddy 留在本机的用量记录，读成一份逐请求可核对的总账。**
+**把 CodeBuddy（IDE / CLI）、WorkBuddy 留在本机的用量记录，读成一份逐请求可核对的总账。**
 
 ### [在线打开 →](https://875778261.github.io/codebuddy-token-dashboard/) &nbsp;&nbsp;·&nbsp;&nbsp; [下载离线版](https://github.com/875778261/codebuddy-token-dashboard/releases/latest)
 
@@ -11,7 +11,7 @@
 [![在线试用](https://img.shields.io/badge/live_demo-github.io-4f5df0)](https://875778261.github.io/codebuddy-token-dashboard/)
 [![离线版](https://img.shields.io/github/v/release/875778261/codebuddy-token-dashboard?label=offline&color=8957e5)](https://github.com/875778261/codebuddy-token-dashboard/releases/latest)
 ![纯前端](https://img.shields.io/badge/pure_frontend-zero_upload-0d9d92)
-![测试](https://img.shields.io/badge/tests-52_passed-2ea44f)
+![测试](https://img.shields.io/badge/tests-69_passed-2ea44f)
 ![体积](https://img.shields.io/badge/dist-%3C1_MB-6e7781)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 
@@ -30,10 +30,11 @@
 
 | 数据源 | 读什么 | 说明 |
 |---|---|---|
-| **CodeBuddy** | `history/**/index.json` | 逐请求 usage；可选 `codebuddy-sessions.vscdb` 补会话标题与项目路径 |
+| **CodeBuddy IDE** | `history/**/index.json` | 逐请求 usage；可选 `codebuddy-sessions.vscdb` 补会话标题与项目路径 |
+| **CodeBuddy CLI** | `~/.codebuddy/logs/<日期>/*.log` | 一次 `agent.model_call.completed` 算一次请求，积分来自 `Credit received`；日志按天轮转会丢历史，读进来的部分存在本机 |
 | **WorkBuddy** | `~/.workbuddy/projects/**/*.jsonl`（含 `subagents/`） | 逐请求 usage 与积分都来自 jsonl |
 
-只给一端，就只看这一份；两端都给，就合成一份总账，并多出一块**端对比**（两边比一比）。token 直接相加（实测零重叠），比率各自用合并后的分子分母重算。
+只给一端，就只看这一份；两端都给，就合成一份总账，并多出一块**端对比**（两边比一比）。CodeBuddy 端由 IDE 与 CLI 两个源合成，端对比里会多一行端内构成。token 直接相加（实测零重叠），比率各自用合并后的分子分母重算。
 
 ## 快速开始
 
@@ -58,7 +59,7 @@ npm run build        # 产出单个 dist/index.html（不到 1 MB，可离线双
 
 | 方式 | 操作 | 适用 |
 |---|---|---|
-| **拖入**（推荐） | CodeBuddy：把 `%LOCALAPPDATA%\CodeBuddyExtension\Data` 拖进窗口；要标题与项目路径，再把 `%APPDATA%\CodeBuddy CN\codebuddy-sessions.vscdb` 一起拖进来。WorkBuddy：把 `%USERPROFILE%\.workbuddy`（或其 `projects`）拖进来 | 日常使用；拖完还能「重扫」读新增用量 |
+| **拖入**（推荐） | CodeBuddy：把 `%LOCALAPPDATA%\CodeBuddyExtension\Data` 拖进窗口；要标题与项目路径，再把 `%APPDATA%\CodeBuddy CN\codebuddy-sessions.vscdb` 一起拖进来。CodeBuddy CLI：把 `%USERPROFILE%\.codebuddy`（或其 `logs`）拖进来。WorkBuddy：把 `%USERPROFILE%\.workbuddy`（或其 `projects`）拖进来 | 日常使用；拖完还能「重扫」读新增用量 |
 | **快照** | 跑 `npm run collect`，把生成的 `*-usage-*.json` 导入或拖进页面 | 归档、换机、CI，或拖入也不行时 |
 
 页面按**文件形状**识别数据源，不需要提前声明是哪个产品：`history/**/index.json` 归 CodeBuddy，`projects/**/*.jsonl` 归 WorkBuddy，一次拖入两种都能认出来。两端可以分两次拖，后拖的只更新自己那一边。
@@ -98,7 +99,9 @@ Chrome / Edge 把 `AppData` 判定为**系统目录**，`showDirectoryPicker()` 
 
 <img src="docs/screenshots/sessions.png" width="900" alt="会话明细：展开逐请求">
 
-**数据体检**——每份数据自己查一遍，合并后再核对一次；缺什么直接写出来，而不是藏在脚注里。
+**没读到的源**——只读入一个源时，KPI 下面会列出其余源的本机路径（一行一个，可直接复制），拖进来就能补。用不到的点「我没有」，之后不再提示，也能在条内恢复。
+
+**数据体检**——每份数据自己查一遍，合并后再核对一次；缺什么直接写出来，而不是藏在脚注里。顶部一行给端层结论（能不能比、端内缺谁）：端的聚合不会替你记住「IDE 那份还没读」，所以端结论与上面的源级路径清单分开写。
 
 <img src="docs/screenshots/health.png" width="900" alt="单次请求规模与数据体检">
 
@@ -117,10 +120,10 @@ Chrome / Edge 把 `AppData` 判定为**系统目录**，`showDirectoryPicker()` 
 | 总 Token / 输入 / 输出 | `usage` 逐条求和（两源直接相加，跨源不去重） | CB history / WB jsonl |
 | 缓存命中率 | `Σcache / Σinput`，**合并视图按合并后的分子分母重算** | 同上 |
 | 已知积分 | `Σcredit` + 覆盖率（有 credit 字段的请求数 / 全部请求数）；本地无单价表，不换算人民币 | 同上 |
-| 请求数 | 以 `usage` 存在为唯一准入条件 | 同上 |
-| 会话数 | 主会话与 subagent 分列（WorkBuddy 的 subagent 会话独立存在） | 同上 |
-| 模型归属 | **请求级 `model` 优先**（WB），回落会话级 `selectedModelId`（CB）；都缺才归入「未记录模型」 | WB jsonl / CB 项目索引 |
-| 会话标题 | WorkBuddy 取 `ai-title`（约 6 成），CodeBuddy 取会话库 | jsonl / vscdb |
+| 请求数 | 以 `usage` 存在为唯一准入条件；CLI 侧一条 `agent.model_call.completed` 算一次（一次用户 turn 可含多条） | 同上 + CLI 日志 |
+| 会话数 | 主会话与子会话分列（WorkBuddy 的 subagent、CLI 的辅助 agent 都独立存在） | 同上 |
+| 模型归属 | **请求级 `model` 优先**（WB / CLI），回落会话级 `selectedModelId`（CB）；都缺才归入「未记录模型」 | WB jsonl / CLI 日志 / CB 项目索引 |
+| 会话标题 | WorkBuddy 取 `ai-title`（约 6 成），CodeBuddy 取会话库，CLI 没有标题字段（留空） | jsonl / vscdb / CLI 日志 |
 | 项目 | 归一化 cwd（`\`→`/`、去尾斜杠，**大小写保留**）；归一后同 key 不同原串只告警，不自动合并 | 同上 |
 | 活跃天数 / 无记录日 | 按本地日期聚合；两源都没有请求的日子只作中性留白，不做插值 | 同上 |
 
@@ -150,19 +153,22 @@ totalTokens == inputTokens + outputTokens
 - 扩展日志会轮转，早于首次启动目录的 step 级明细（含 `thinkingTokens`）已丢失。
 - 两端共用同一积分账户：合并后的积分只是**账号消耗下限**，与官方账单的差额永远存在，不做比例外推。
 - WorkBuddy 首版不读 `workbuddy.db`：会话标题来自 `ai-title`（约 6 成），缺失留空。
-- 两源都没有请求的日子是**无记录日**（多工具切换的正常结果），只作中性留白，不当缺口告警。
+- **CodeBuddy CLI 的用量只在日志里，日志按天轮转**：轮转掉的部分只存在于本机归档，清空归档或清浏览器数据就找不回来。
+- CodeBuddy CLI 没有会话标题字段，一律留空；项目取自每份日志首行的 `Workspace Path`。
+- 各源都没有请求的日子是**无记录日**（多工具切换的正常结果），只作中性留白，不当缺口告警。
 
 ## 验证
 
 ```bash
-npm test          # 52 个单元测试：解析、聚合、按源切片、合并、WorkBuddy 解析、快照往返、SQLite 解析、新鲜度
-npm run verify    # 真实数据对拍：TS 管线 vs Python 独立实现
+npm test          # 69 个单元测试：解析、聚合、按源切片、合并、WorkBuddy / CLI 解析、拖拽扫描、完整度、快照往返、SQLite 解析、新鲜度
+npm run verify    # 真实数据对拍（CodeBuddy IDE）：TS 管线 vs Python 独立实现
+npm run verify:cli # 真实数据对拍（CodeBuddy CLI）：日志解析、积分配对、逐日逐会话
 npm run lint:copy # 文案门禁：界面可见文案里的禁用词与超长句（规则见 docs/COPY.md；build 前自动跑）
 ```
 
-`npm run verify` 会跑 `scripts/ground-truth.py`（独立的 Python 实现）与 `scripts/verify-pipeline.ts`（浏览器里跑的那份 TS 代码），逐字段比对请求数、Token、积分、两条恒等式、逐日、逐会话、以及快照往返。任何差异都判定为解析 bug。
+`npm run verify` 会跑 `scripts/ground-truth.py`（独立的 Python 实现）与 `scripts/verify-pipeline.ts`（浏览器里跑的那份 TS 代码），逐字段比对请求数、Token、积分、两条恒等式、逐日、逐会话、以及快照往返。`npm run verify:cli` 是同一套做法的 CLI 版：`scripts/cli-truth.py` 自己读日志、自己按 rootRequestId 配对积分，再与 `src/core/cliParse.ts` 逐字段对。任何差异都判定为解析 bug。
 
-本机最近一次对拍：`128 会话 / 674 请求 / 886,086,182 token / 1611.69 积分`，逐日逐会话完全一致（仅作回归基线，不是承诺值）。
+本机最近一次对拍：IDE `128 会话 / 674 请求 / 886,086,182 token / 1611.69 积分`；CLI `33 会话 / 319 请求 / 11,430,910 token / 69.76 积分`，两边逐日逐会话完全一致（仅作回归基线，不是承诺值）。
 
 ## 架构
 
@@ -178,19 +184,22 @@ src/
   core/            纯函数，可被 Node 与浏览器共用
     sqlite.ts      极简只读 SQLite 解析（表 b-tree + overflow 页）
     parse.ts       CodeBuddy history index.json → Dataset（含自检与覆盖率）
+    cliParse.ts    CodeBuddy CLI logs/*.log → Dataset（积分配对 / 项目归属 / 归档累积）
     workbuddyParse.ts  WorkBuddy projects/**/*.jsonl → Dataset（去重 / 全零回落 / subagents）
     merge.ts       切片归一化与合并（路径归一、源前缀、疑似同项目）
-    aggregate.ts   时间窗口 / 模型 / 项目 / 时段 / 分布聚合（含按源过滤）
-    snapshot.ts    快照序列化与反序列化（v2，兼容 v1）
+    aggregate.ts   时间窗口 / 模型 / 项目 / 时段 / 分布聚合（按源过滤 + 按端归组）
+    snapshot.ts    快照序列化与反序列化（v3，兼容 v1/v2，拒绝更新的版本）
   platform/        浏览器侧 I/O（目录扫描、拖入扫描、IndexedDB）
   ui/              卡片与图表组件（ECharts + GSAP）
 docs/
   codebuddy-ide-data-sources.md  本机数据源勘察报告（口径依据）
+  codebuddy-cli-data-sources.md  CLI 数据源勘察报告（日志形态、积分配对、轮转）
   workbuddy-data-sources.md      WorkBuddy 数据源勘察报告（含 token.daeai.cn 口径对拍）
   adr/             架构决策记录
 scripts/
-  collect.ts       本地采集 → 快照 JSON
-  verify-pipeline.ts / ground-truth.py  真值对拍
+  collect.ts       本地采集 → 快照 JSON（IDE + CLI）
+  verify-pipeline.ts / ground-truth.py  真值对拍（IDE）
+  verify-cli.ts / cli-truth.py          真值对拍（CLI）
 ```
 
 所有指标只有一份聚合实现：按源过滤是**视图**，不是第二条管线（[ADR 0004](docs/adr/0004-source-slices-and-compare.md)）。
@@ -215,5 +224,5 @@ Release 附件固定叫 `index.html`，所以 `releases/latest/download/index.ht
 - [`GLOSSARY.md`](GLOSSARY.md)：领域术语表（数据源、切片、合并视图、端对比、已知积分、无记录日）。
 - [`docs/COPY.md`](docs/COPY.md)：界面文案规范与禁用词，`npm run lint:copy` 是它的执行者。
 - [`docs/deploy.md`](docs/deploy.md)：部署入口、构建设置、网络实况与踩坑记录。
-- [`docs/codebuddy-ide-data-sources.md`](docs/codebuddy-ide-data-sources.md) / [`docs/workbuddy-data-sources.md`](docs/workbuddy-data-sources.md)：两个数据源的勘察报告，所有口径的一手依据。
-- [`docs/adr/`](docs/adr/)：架构决策记录，从 [0001](docs/adr/0001-playwright-install-scope.md) 起。
+- [`docs/codebuddy-ide-data-sources.md`](docs/codebuddy-ide-data-sources.md) / [`docs/codebuddy-cli-data-sources.md`](docs/codebuddy-cli-data-sources.md) / [`docs/workbuddy-data-sources.md`](docs/workbuddy-data-sources.md)：三个数据源的勘察报告，所有口径的一手依据。
+- [`docs/adr/`](docs/adr/)：架构决策记录，从 [0001](docs/adr/0001-playwright-install-scope.md) 起；[0006](docs/adr/0006-three-sources-two-ends.md) 定三源两端，[0007](docs/adr/0007-archive-unrebuildable-source.md) 定归档边界。

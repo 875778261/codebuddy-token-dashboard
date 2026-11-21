@@ -48,6 +48,8 @@ export function emptySelfCheck(): SelfCheck {
     sessionsWithoutCwd: 0,
     sessionsWithoutTitle: 0,
     requestsWithoutCredit: 0,
+    creditUnpaired: 0,
+    archiveRequests: 0,
     duplicateRequests: 0,
     usageZeroFallbacks: 0,
     subAgentSessions: 0,
@@ -260,7 +262,7 @@ export function buildDataset(input: ParseInput): Dataset {
   }
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: new Date().toISOString(),
     sources: sourceInfo,
     bySource: { codebuddy: { info: sourceInfo, selfCheck, coverage } },

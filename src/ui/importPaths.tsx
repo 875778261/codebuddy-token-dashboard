@@ -17,6 +17,7 @@ const DB_PATH = IS_WIN
   ? '%APPDATA%\\CodeBuddy CN\\codebuddy-sessions.vscdb'
   : '~/Library/Application Support/CodeBuddy CN/codebuddy-sessions.vscdb'
 const WB_PATH = IS_WIN ? '%USERPROFILE%\\.workbuddy' : '~/.workbuddy'
+const CLI_PATH = IS_WIN ? '%USERPROFILE%\\.codebuddy' : '~/.codebuddy'
 
 export type ImportPathKey = SourceId | 'sessions'
 
@@ -32,7 +33,8 @@ export interface ImportPath {
 }
 
 export const IMPORT_PATHS: ImportPath[] = [
-  { key: 'codebuddy', label: 'CodeBuddy', value: DATA_PATH, hint: 'history/**/index.json' },
+  { key: 'codebuddy', label: 'CodeBuddy IDE', value: DATA_PATH, hint: 'history/**/index.json' },
+  { key: 'codebuddy-cli', label: 'CodeBuddy CLI', value: CLI_PATH, hint: 'logs/**/*.log' },
   { key: 'workbuddy', label: 'WorkBuddy', value: WB_PATH, hint: 'projects/**/*.jsonl' },
   { key: 'sessions', label: 'CodeBuddy 会话库（可选）', value: DB_PATH, hint: '补标题和项目路径', optional: true },
 ]
@@ -76,7 +78,7 @@ export function PathBox({ item }: { item: ImportPath }) {
   )
 }
 
-/** 三个路径一起排（Landing 用） */
+/** 全部入参路径一起排（Landing 用） */
 export function PathList() {
   return (
     <>

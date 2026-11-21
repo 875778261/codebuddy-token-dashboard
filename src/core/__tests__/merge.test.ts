@@ -35,7 +35,7 @@ function slice(source: SourceId, rawId: string, cwd: string, requests: RequestRe
   const coverage = computeCoverage([session])
   const selfCheck = { ...emptySelfCheck(), requestsTotal: requests.length, requestsWithUsage: requests.length }
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: '2026-10-29T00:00:00.000Z',
     sources: info,
     bySource: { [source]: { info, selfCheck, coverage } },

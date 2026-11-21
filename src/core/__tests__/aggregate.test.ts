@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aggregate, makeCustomWindow, makeWindow } from '../aggregate'
+import { aggregate, aggregatesByEnd, makeCustomWindow, makeWindow } from '../aggregate'
 import { buildDemoDataset } from '../demo'
 import { emptySelfCheck } from '../parse'
 import type { Dataset, RequestRecord, SessionRecord, SourceId } from '../types'
@@ -38,7 +38,7 @@ const day = (iso: string) => new Date(`${iso}T10:00:00`).getTime()
 
 function dataset(): Dataset {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: '2026-10-29T00:00:00.000Z',
     sources: { historyRoots: [], projectCount: 1, convIndexCount: 2, sessionMetaCount: 2, scannedAt: '', elapsedMs: 0 },
     bySource: {},
@@ -62,6 +62,25 @@ function dataset(): Dataset {
 }
 
 describe('aggregate', () => {
+  it('端视图把同一产品的多个源相加，端与端之间不串味', () => {
+    const base = dataset()
+    const withEnds: Dataset = {
+      ...base,
+      sessions: [
+        ...base.sessions.map((s) => (s.rawId === 'c' ? { ...s, id: 'workbuddy:c', source: 'workbuddy' as const } : s)),
+        session('d', 'd:/w/alpha', 'model-a', [req(day('2026-10-02'), 70, 60, 1)], 'codebuddy-cli'),
+      ],
+    }
+    const win = makeCustomWindow('2026-10-01', '2026-10-03')
+    const byEnd = aggregatesByEnd(withEnds, win)
+    // CodeBuddy 端 = codebuddy(350) + codebuddy-cli(70)；WorkBuddy 端只有它自己那条（在窗口外 → 0）
+    expect(byEnd.codebuddy!.totals.total).toBe(420)
+    expect(byEnd.codebuddy!.totals.requests).toBe(4)
+    expect(byEnd.workbuddy!.totals.total).toBe(0)
+    // 合并视图与端视图的求和必须一致（没有第二套聚合）
+    expect(aggregate(withEnds, win).totals.total).toBe(420)
+  })
+
   it('按窗口裁剪请求，并把空档日补齐', () => {
     const win = makeCustomWindow('2026-10-01', '2026-10-03')
     const agg = aggregate(dataset(), win)

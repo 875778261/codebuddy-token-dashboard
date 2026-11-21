@@ -13,6 +13,7 @@
     "lint:copy": "tsx scripts/lint-copy.ts",
     "verify": "python scripts/ground-truth.py && tsx scripts/verify-pipeline.ts",
     "verify:ts": "tsx scripts/verify-pipeline.ts",
+    "verify:cli": "tsx scripts/verify-cli.ts",
     "bridge": "node scripts/bridge.mjs",
     "collect": "tsx scripts/collect.ts",
     "deploy:dry": "npm run build && wrangler deploy --dry-run",

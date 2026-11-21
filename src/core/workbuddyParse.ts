@@ -322,7 +322,7 @@ export async function parseWorkbuddy(files: LazyFile[], opts: WorkbuddyParseOpti
   }
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: new Date().toISOString(),
     sources: info,
     bySource: { workbuddy: { info, selfCheck, coverage } },

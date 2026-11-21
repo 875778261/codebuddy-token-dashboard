@@ -8,10 +8,12 @@ import { normalizeDataset } from './merge'
  * 用途：归档（日志会被轮转 / history 会被清理）、换机比对、无目录权限时按文件导入。
  * 不包含任何消息正文，只有会话标题、项目路径与请求级 usage。
  *
+ * v3：加入 codebuddy-cli 源与归档计数（`archiveRequests`）。旧版页面读到 v3 必须明确拒绝：
+ *     它不认识新源，静默读会给出一个少算总量的图——这比打不开严重。
  * v2：加入 source / bySource / 请求级 model，使「只载入一端」的快照也能单独导入后再与另一端合并。
  * v1：全部视为 CodeBuddy，导入时补前缀与源标记。
  */
-export const SNAPSHOT_SCHEMA = 2
+export const SNAPSHOT_SCHEMA = 3
 
 export function serializeDataset(dataset: Dataset): string {
   return JSON.stringify(
@@ -61,9 +63,12 @@ export function parseSnapshot(text: string): Dataset {
   } catch {
     throw new Error('不是有效的 JSON 文件')
   }
-  const doc = raw as Partial<Dataset> & { sessions?: unknown }
+  const doc = raw as Partial<Dataset> & { sessions?: unknown; schemaVersion?: number }
   if (!doc || typeof doc !== 'object' || !Array.isArray(doc.sessions)) {
     throw new Error('不是用量快照（缺少 sessions 数组）')
+  }
+  if (typeof doc.schemaVersion === 'number' && doc.schemaVersion > SNAPSHOT_SCHEMA) {
+    throw new Error(`这份快照来自更新的版本（v${doc.schemaVersion}），当前页面最高支持 v${SNAPSHOT_SCHEMA}。请用新版页面打开。`)
   }
   const sessions = (doc.sessions as Dataset['sessions']).map((s) => {
     const requests = (s.requests ?? []).map((r) => ({ ...r }))
@@ -79,7 +84,7 @@ export function parseSnapshot(text: string): Dataset {
   }
   const selfCheck: SelfCheck = doc.selfCheck ?? emptySelfCheck()
   const dataset: Dataset = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     isDemo: doc.isDemo ? true : undefined,
     generatedAt: doc.generatedAt ?? new Date().toISOString(),
     sources: info,

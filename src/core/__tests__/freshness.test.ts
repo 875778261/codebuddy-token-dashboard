@@ -8,7 +8,7 @@ const DAY = '2026-10-29T18:20:00.000Z'
 function slice(source: SourceId, scannedAt: string, mergedAt = '2026-10-30T12:00:00.000Z'): Dataset {
   const info = { historyRoots: [`${source}/history`], projectCount: 1, convIndexCount: 1, sessionMetaCount: 0, scannedAt, elapsedMs: 12 }
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: mergedAt,
     sources: { ...info, scannedAt: mergedAt },
     bySource: { [source]: { info, selfCheck: emptySelfCheck(), coverage: { daysWithData: 1, daysInRange: 1, missingDays: [] } } },

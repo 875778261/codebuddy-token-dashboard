@@ -1109,6 +1109,94 @@ table.req td.l {
 
 /* ---------- health ---------- */
 
+/* 没读到的源：一行一个源，路径可复制；一排横向会在窄窗口折行，所以纵向堆叠 */
+.missing-card {
+  border-style: dashed;
+}
+
+.miss-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.miss-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--card-2);
+  min-width: 0;
+}
+
+.miss-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  flex: none;
+}
+
+.miss-path {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.miss-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.miss-actions .btn {
+  padding: 2px 8px;
+  font-size: 10.5px;
+}
+
+.miss-restore {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: var(--ink-4);
+}
+
+.miss-restore span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn.tiny {
+  padding: 2px 8px;
+  font-size: 10.5px;
+}
+
+.completeness-ends {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-bottom: 10px;
+  font-size: 10.5px;
+  color: var(--ink-4);
+}
+
+.completeness-ends b {
+  color: var(--ink-3);
+  font-weight: 600;
+}
+
+/* 顶栏的缺源一行：只报结论，细节在体检卡 */
+.brand-text .meta-miss {
+  color: var(--amber);
+}
+
 /* 宽卡两栏：左自检/覆盖，右来源/缺口 */
 .health-cols {
   display: grid;
@@ -1541,6 +1629,10 @@ table.req td.l {
   background: var(--teal);
 }
 
+.src-dot.codebuddy-cli {
+  background: var(--amber);
+}
+
 .split-line {
   display: flex;
   gap: 8px;
@@ -1640,6 +1732,37 @@ table.req td.l {
   width: 7px;
   height: 7px;
   border-radius: 2px;
+}
+
+/* 端内构成：CodeBuddy = IDE + CLI，一行说明「涨在哪」 */
+.cmp-inside {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 10.5px;
+  color: var(--ink-4);
+}
+
+.cmp-inside-label {
+  color: var(--ink-3);
+}
+
+.cmp-inside span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cmp-inside i {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+}
+
+.cmp-inside-note {
+  color: var(--ink-4);
+  opacity: 0.9;
 }
 
 .cmp-table {

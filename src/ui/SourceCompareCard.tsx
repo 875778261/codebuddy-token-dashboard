@@ -1,8 +1,18 @@
 import type { Aggregates } from '../core/aggregate'
 import { fmtCredit, fmtInt, fmtPct, fmtTokens } from '../core/format'
-import { SOURCE_META, SOURCE_ORDER, type SourceId } from '../core/types'
+import {
+  END_META,
+  END_ORDER,
+  END_OF_SOURCE,
+  SOURCE_META,
+  SOURCE_ORDER,
+  sourcesOfEnd,
+  type EndId,
+  type SourceId,
+} from '../core/types'
 import { PathBox, importPathOf } from './importPaths'
 import type { Palette } from './theme'
+import { sourceColor } from './theme'
 
 interface Row {
   label: string
@@ -65,10 +75,10 @@ const ROWS: Row[] = [
     hint: '受模型构成影响，不能直接当效率比',
   },
   {
-    label: '会话（主 / sub）',
+    label: '会话（主 / 子）',
     value: (a) => `${fmtInt(a.totals.mainSessions)} / ${fmtInt(a.totals.subAgentSessions)}`,
     diff: (a, b) => `${b.totals.mainSessions - a.totals.mainSessions >= 0 ? '+' : ''}${b.totals.mainSessions - a.totals.mainSessions} 主会话`,
-    hint: 'subagent 会话只有 WorkBuddy 有，所以分开列',
+    hint: '子会话 = WorkBuddy 的 subagent 与 CLI 的辅助 agent，与主会话 token 不重复',
   },
 ]
 
@@ -76,25 +86,32 @@ function creditCoverage(a: Aggregates): number {
   return a.totals.requests ? a.totals.creditKnownRequests / a.totals.requests : 0
 }
 
+/** 端对比要引导用户去补哪个目录：取该端的第一个源 */
+function primarySourceOf(end: EndId): SourceId {
+  return sourcesOfEnd(end)[0]
+}
+
 export function SourceCompareCard({
   merged,
+  byEnd,
   bySource,
   palette,
   onAdd,
   busy,
 }: {
   merged: Aggregates
+  byEnd: Partial<Record<EndId, Aggregates>>
   bySource: Partial<Record<SourceId, Aggregates>>
   palette: Palette
   onAdd: () => void
   busy: boolean
 }) {
-  const loaded = SOURCE_ORDER.filter((s) => bySource[s])
-  const colorOf = (s: SourceId) => (s === 'codebuddy' ? palette.models[0] : palette.models[1])
+  const loaded = END_ORDER.filter((e) => byEnd[e])
+  const colorOf = (e: EndId) => sourceColor(palette, primarySourceOf(e))
 
   if (loaded.length < 2) {
     const only = loaded[0]
-    const missing = SOURCE_ORDER.filter((s) => s !== only)[0]
+    const missing = END_ORDER.filter((e) => e !== only)[0]
     return (
       <section className="card">
         <div className="card-head">
@@ -102,28 +119,28 @@ export function SourceCompareCard({
             <h3>端对比</h3>
             <div className="sub">量差 · 同模型效率差 · 切换节奏</div>
           </div>
-          <div className="tools">{only ? `只有 ${SOURCE_META[only].label}` : '没有数据'}</div>
+          <div className="tools">{only ? `只有 ${END_META[only].label}` : '没有数据'}</div>
         </div>
         <div className="src-empty">
-          <b>{only ? `还缺 ${SOURCE_META[missing].label}，暂时没法比` : '还没有读入任何数据'}</b>
+          <b>{only ? `还缺 ${END_META[missing].label}，暂时没法比` : '还没有读入任何数据'}</b>
           <span>
             {only
-              ? `${SOURCE_META[only].label} 的数字已经算在上面了。再加一个 ${SOURCE_META[missing].label} 文件夹，这里就会出现两边的用量、效率和切换节奏。已经读入的 ${SOURCE_META[only].label} 不会重读。`
-              : '读入 CodeBuddy 或 WorkBuddy 任一个就能开始；两个都读入后，这里自动出现端对比。'}
+              ? `${END_META[only].label} 的数字已经算在上面了。再加一个 ${END_META[missing].label} 文件夹，这里就会出现两边的用量、效率和切换节奏。已经读入的 ${END_META[only].label} 不会重读。`
+              : '读入 CodeBuddy（IDE 或 CLI）、WorkBuddy 任一个就能开始；两端的都读入后，这里自动出现端对比。'}
           </span>
           {/* 最需要路径的就是这一刻：把缺失那一端的入参路径直接摆出来，不用回初始页找 */}
-          {only ? <PathBox item={importPathOf(missing)} /> : null}
+          {only ? <PathBox item={importPathOf(primarySourceOf(missing))} /> : null}
           <button type="button" className="btn" onClick={onAdd} disabled={busy}>
             加一个文件夹
           </button>
         </div>
-        <div className="card-foot">只读入一个时，这里只显示它自己的数字。积分要两边都读入、合并之后才有意义。</div>
+        <div className="card-foot">只读入一个时，这里只显示它自己的数字。积分要两端都读入、合并之后才有意义。</div>
       </section>
     )
   }
 
-  const cb = bySource.codebuddy!
-  const wb = bySource.workbuddy!
+  const cb = byEnd.codebuddy!
+  const wb = byEnd.workbuddy!
   const total = cb.totals.total + wb.totals.total
   const cbShare = total ? cb.totals.total / total : 0
 
@@ -134,11 +151,17 @@ export function SourceCompareCard({
     .slice(0, 6)
 
   const pattern = merged.days.map((d) => {
-    const c = (d.bySource.codebuddy ?? 0) > 0
+    const c = SOURCE_ORDER.filter((s) => END_OF_SOURCE[s] === 'codebuddy').reduce((a, s) => a + (d.bySource[s] ?? 0), 0) > 0
     const w = (d.bySource.workbuddy ?? 0) > 0
     return c && w ? 'both' : c ? 'cb' : w ? 'wb' : 'none'
   })
   const count = (k: string) => pattern.filter((p) => p === k).length
+
+  // 端内构成：一个端由多个源组成时（CodeBuddy = IDE + CLI），把占比摊开
+  const parts = (end: EndId) =>
+    sourcesOfEnd(end)
+      .map((s) => ({ source: s, agg: bySource[s] }))
+      .filter((p): p is { source: SourceId; agg: Aggregates } => Boolean(p.agg))
 
   return (
     <section className="card">
@@ -159,21 +182,38 @@ export function SourceCompareCard({
           <div className="cmp-split-legend">
             <span>
               <i style={{ background: colorOf('codebuddy') }} />
-              {SOURCE_META.codebuddy.label} {fmtPct(cbShare, 1)}
+              {END_META.codebuddy.label} {fmtPct(cbShare, 1)}
             </span>
             <span>
               <i style={{ background: colorOf('workbuddy') }} />
-              {SOURCE_META.workbuddy.label} {fmtPct(1 - cbShare, 1)}
+              {END_META.workbuddy.label} {fmtPct(1 - cbShare, 1)}
             </span>
           </div>
+          {(['codebuddy', 'workbuddy'] as EndId[]).map((end) => {
+            const list = parts(end)
+            if (list.length < 2) return null
+            const endTotal = list.reduce((a, p) => a + p.agg.totals.total, 0) || 1
+            return (
+              <div className="cmp-inside" key={end}>
+                <span className="cmp-inside-label">{END_META[end].label} 端内</span>
+                {list.map((p) => (
+                  <span key={p.source}>
+                    <i style={{ background: sourceColor(palette, p.source) }} />
+                    {SOURCE_META[p.source].label} {fmtPct(p.agg.totals.total / endTotal, 1)}
+                  </span>
+                ))}
+                <span className="cmp-inside-note">{end === 'codebuddy' ? '同一账户，形态不同' : ''}</span>
+              </div>
+            )
+          })}
         </div>
 
         <table className="cmp-table">
           <thead>
             <tr>
               <th className="l">指标</th>
-              <th>{SOURCE_META.codebuddy.label}</th>
-              <th>{SOURCE_META.workbuddy.label}</th>
+              <th>{END_META.codebuddy.label}</th>
+              <th>{END_META.workbuddy.label}</th>
               <th>WB / CB</th>
             </tr>
           </thead>
@@ -251,7 +291,9 @@ export function SourceCompareCard({
                         ? { background: colorOf('workbuddy') }
                         : undefined
                 }
-                title={`${d.key} · CB ${fmtTokens(d.bySource.codebuddy ?? 0)} / WB ${fmtTokens(d.bySource.workbuddy ?? 0)}`}
+                title={`${d.key} · ${SOURCE_ORDER.filter((s) => (d.bySource[s] ?? 0) > 0)
+                  .map((s) => `${SOURCE_META[s].short} ${fmtTokens(d.bySource[s] ?? 0)}`)
+                  .join(' / ')}`}
               />
             ))}
           </div>
@@ -259,7 +301,8 @@ export function SourceCompareCard({
       </div>
 
       <div className="card-foot">
-        这里的积分是<b>已知积分</b>：两边共用一个账户，字段覆盖也不一样，加起来只是账号消耗的下限，不是「总积分」，也不按比例推算。
+        这里的积分是<b>已知积分</b>：两端共用一个账户，字段覆盖也不一样，加起来只是账号消耗的下限，不是「总积分」，也不按比例推算。
+        CodeBuddy 端把 IDE 与 CLI 合在一起算：同一账户、两种形态，分开看请用上面的端内构成。
       </div>
     </section>
   )

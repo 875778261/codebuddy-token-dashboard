@@ -1,4 +1,5 @@
-import type { Dataset, RequestRecord, SessionRecord, SourceId } from './types'
+import type { Dataset, EndId, RequestRecord, SessionRecord, SourceId } from './types'
+import { END_OF_SOURCE, END_ORDER } from './types'
 import { addDays, dayList, localDateKey, projectName, startOfDay } from './format'
 
 export type WindowPreset = '7' | '30' | '90' | 'all'
@@ -513,4 +514,18 @@ export function aggregatesBySource(
     bySource[source] = aggregate(dataset, win, { source })
   }
   return { merged: aggregate(dataset, win), bySource }
+}
+
+/**
+ * 端层视图：CodeBuddy 端 = IDE + CLI，WorkBuddy 端 = WB。
+ * 仍然只调 aggregate()，只是把数据集先按端裁一遍——不做第二套聚合实现。
+ */
+export function aggregatesByEnd(dataset: Dataset, win: WindowSpec): Partial<Record<EndId, Aggregates>> {
+  const out: Partial<Record<EndId, Aggregates>> = {}
+  for (const end of END_ORDER) {
+    const sessions = dataset.sessions.filter((s) => END_OF_SOURCE[s.source] === end)
+    if (!sessions.length) continue
+    out[end] = aggregate({ ...dataset, sessions }, win)
+  }
+  return out
 }

@@ -1,7 +1,8 @@
 import type { Aggregates } from '../core/aggregate'
 import { fmtCredit, fmtInt, fmtPct, fmtTokens } from '../core/format'
-import { SOURCE_META } from '../core/types'
+import { SOURCE_META, SOURCE_ORDER } from '../core/types'
 import type { Palette } from './theme'
+import { sourceColor } from './theme'
 
 export function ModelCard({
   agg,
@@ -42,12 +43,18 @@ export function ModelCard({
             {models.slice(0, 9).map((m, i) => {
               const color = palette.models[i % palette.models.length]
               const on = focus === m.key
-              const cbTok = m.bySource.codebuddy ?? 0
-              const wbTok = m.bySource.workbuddy ?? 0
-              const srcTotal = cbTok + wbTok
-              const mixed = dual && cbTok > 0 && wbTok > 0 && srcTotal > 0
+              // 逐源拆分不再写死两源：加源时这里必须自动跟上，否则新源的用量在提示里消失
+              const parts = SOURCE_ORDER.map((s) => ({ source: s, tokens: m.bySource[s] ?? 0 })).filter((p) => p.tokens > 0)
+              const srcTotal = parts.reduce((a, p) => a + p.tokens, 0)
+              const mixed = parts.length > 1 && srcTotal > 0
+              let acc = 0
+              const stops = parts.map((p) => {
+                const from = (acc / srcTotal) * 100
+                acc += p.tokens
+                return `${sourceColor(palette, p.source)} ${from}% ${(acc / srcTotal) * 100}%`
+              })
               const fill = mixed
-                ? { background: `linear-gradient(90deg, ${palette.models[0]} 0 ${(cbTok / srcTotal) * 100}%, ${palette.models[1]} ${(cbTok / srcTotal) * 100}% 100%)` }
+                ? { background: `linear-gradient(90deg, ${stops.join(', ')})` }
                 : { background: color }
               return (
                 <div
@@ -60,7 +67,7 @@ export function ModelCard({
                     if (e.key === 'Enter' || e.key === ' ') onFocus(on ? null : m.key)
                   }}
                   title={`${m.key}\nToken ${fmtInt(m.total)} · 请求 ${m.requests} · 会话 ${m.sessions}\n积分 ${fmtCredit(m.credit)} · 每百万 token ${m.creditPerMillion.toFixed(1)}\n缓存命中率 ${fmtPct(m.cacheHitRate)}${
-                    srcTotal ? `\n${SOURCE_META.codebuddy.short} ${fmtTokens(cbTok)} · ${SOURCE_META.workbuddy.short} ${fmtTokens(wbTok)}` : ''
+                    srcTotal ? `\n${parts.map((p) => `${SOURCE_META[p.source].short} ${fmtTokens(p.tokens)}`).join(' · ')}` : ''
                   }`}
                 >
                   <span className="nm">

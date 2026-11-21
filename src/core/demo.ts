@@ -41,10 +41,19 @@ const WB_MODELS: ModelSpec[] = [
   { id: 'hy4-preview', weight: 0.06, creditPerM: 9.2, cacheBias: 0.9 },
 ]
 
+/** CLI 的模型与 IDE 高度重叠：同模型对照才有东西可比 */
+const CLI_MODELS: ModelSpec[] = [
+  { id: 'deepseek-v4.1-flash', weight: 0.66, creditPerM: 4.6, cacheBias: 0.92 },
+  { id: 'glm-5.3-flash', weight: 0.2, creditPerM: 3.1, cacheBias: 0.9 },
+  { id: 'space-bunny', weight: 0.08, creditPerM: 5.4, cacheBias: 0.88 },
+  { id: 'hy4-preview', weight: 0.06, creditPerM: 9.2, cacheBias: 0.86 },
+]
+
 /** 共享项目只有一个：用来验证「两端都用」标识，且不会把不同项目误并 */
 const SHARED_PROJECT = 'd:/workspace/acme/portal-web'
 const CB_PROJECTS = [SHARED_PROJECT, 'd:/workspace/acme/api-gateway', 'd:/labs/agent-playground', 'c:/Users/dev/CodeBuddy/sandbox']
 const WB_PROJECTS = [SHARED_PROJECT, 'd:\\work\\billing-service', 'd:\\work\\data-pipeline', 'd:\\labs\\prompt-studio', 'd:\\labs\\dashboard-kit']
+const CLI_PROJECTS = [SHARED_PROJECT, 'd:/labs/agent-playground', 'd:/workspace/acme/api-gateway']
 
 const TOPICS = ['重构鉴权中间件', '修复分页边界问题', '给列表页加虚拟滚动', '补充 E2E 用例', '梳理缓存失效路径', '接入新的模型供应商', '排查构建产物体积', '把日志接入看板', '拆分超大组件', '给接口加限流']
 
@@ -114,23 +123,27 @@ function buildSlice(cfg: SliceConfig, now: number): Dataset {
         requests.push(
           cfg.source === 'workbuddy'
             ? { ...base, type: 'workbuddy', model: model.id, key: `wb-${seq}-${k}` }
-            : { ...base, type: rnd() > 0.94 ? 'ask' : 'craft' },
+            : cfg.source === 'codebuddy-cli'
+              ? { ...base, type: 'cli', model: model.id, key: `cli-${seq}-${k}` }
+              : { ...base, type: rnd() > 0.94 ? 'ask' : 'craft' },
         )
         ts += 40_000 + Math.floor(rnd() * 300_000)
       }
 
-      const rawId = `${cfg.source === 'workbuddy' ? 'wb' : 'cb'}-${d}-${i}`
+      const prefix = cfg.source === 'workbuddy' ? 'wb' : cfg.source === 'codebuddy-cli' ? 'cli' : 'cb'
+      const rawId = `${prefix}-${d}-${i}`
       sessions.push({
         id: `${cfg.source}:${rawId}`,
         rawId,
         source: cfg.source,
         isSubAgent,
         projectId: `hash-${project.replace(/[^a-zA-Z0-9]+/g, '-')}`,
-        type: cfg.source === 'workbuddy' ? 'workbuddy' : rnd() > 0.94 ? 'ask' : 'craft',
-        chatMode: isSubAgent ? 'subagent' : 'craft',
-        // 请求级模型（WorkBuddy）在缺请求级字段时回落到会话级，所以两端都写主模型
+        type: cfg.source === 'workbuddy' ? 'workbuddy' : cfg.source === 'codebuddy-cli' ? 'cli' : rnd() > 0.94 ? 'ask' : 'craft',
+        chatMode: isSubAgent ? (cfg.source === 'codebuddy-cli' ? 'auxiliary' : 'subagent') : cfg.source === 'codebuddy-cli' ? 'cli' : 'craft',
+        // 请求级模型（WorkBuddy / CLI）在缺请求级字段时回落到会话级，所以三端都写主模型
         modelId: model.id,
-        title: isSubAgent ? undefined : `${TOPICS[Math.floor(rnd() * TOPICS.length)]}${rnd() > 0.75 ? ' · 第二轮' : ''}`,
+        // CLI 的日志里没有任何标题线索：示例数据也保持留空，别让人以为真实数据有标题
+        title: cfg.source === 'codebuddy-cli' || isSubAgent ? undefined : `${TOPICS[Math.floor(rnd() * TOPICS.length)]}${rnd() > 0.75 ? ' · 第二轮' : ''}`,
         cwd: project,
         status: rnd() > 0.2 ? 'Completed' : 'Aborted',
         createdAt: requests[0].ts,
@@ -156,11 +169,11 @@ function buildSlice(cfg: SliceConfig, now: number): Dataset {
   const coverage = computeCoverage(sessions)
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     isDemo: true,
     generatedAt: new Date(now).toISOString(),
     sources: {
-      historyRoots: [cfg.source === 'workbuddy' ? '（示例数据）~/.workbuddy/projects' : '（示例数据）CodeBuddyExtension/Data/…/history'],
+      historyRoots: [rootOf(cfg.source)],
       projectCount: cfg.projects.length,
       convIndexCount: sessions.length,
       sessionMetaCount: sessions.length,
@@ -171,7 +184,7 @@ function buildSlice(cfg: SliceConfig, now: number): Dataset {
     bySource: {
       [cfg.source]: {
         info: {
-          historyRoots: [cfg.source === 'workbuddy' ? '（示例数据）~/.workbuddy/projects' : '（示例数据）CodeBuddyExtension/Data/…/history'],
+          historyRoots: [rootOf(cfg.source)],
           projectCount: cfg.projects.length,
           convIndexCount: sessions.length,
           sessionMetaCount: sessions.length,
@@ -187,6 +200,12 @@ function buildSlice(cfg: SliceConfig, now: number): Dataset {
     selfCheck,
     coverage,
   }
+}
+
+function rootOf(source: SourceId): string {
+  if (source === 'workbuddy') return '（示例数据）~/.workbuddy/projects'
+  if (source === 'codebuddy-cli') return '（示例数据）~/.codebuddy/logs'
+  return '（示例数据）CodeBuddyExtension/Data/…/history'
 }
 
 export function buildDemoDataset(now = Date.now()): Dataset {
@@ -215,6 +234,19 @@ export function buildDemoDataset(now = Date.now()): Dataset {
     },
     now,
   )
-  const merged = mergeSlices([codebuddy, workbuddy])
+  // CLI 与 IDE 是同一产品两种形态：日期带与 WorkBuddy 重叠，端内构成才有内容
+  const cli = buildSlice(
+    {
+      source: 'codebuddy-cli',
+      seed: 424242,
+      models: CLI_MODELS,
+      projects: CLI_PROJECTS,
+      activeOn: (w) => w > 0 && w < 6 && w % 2 === 0,
+      gapDays: new Set([47, 33]),
+      subAgentRate: 0.08,
+    },
+    now,
+  )
+  const merged = mergeSlices([codebuddy, cli, workbuddy])
   return { ...merged, isDemo: true }
 }

@@ -46,6 +46,69 @@ export interface LocalData {
   elapsedMs: number
 }
 
+export interface LazyLocalFile {
+  path: string[]
+  read: () => Promise<string>
+}
+
+export interface LocalCliData {
+  /** `logs/<YYYY-MM-DD>/*.log` */
+  logs: LazyLocalFile[]
+  /** `traces/<pid>/trace_*.jsonl`，只用于辅助 agent 判定 */
+  traces: LazyLocalFile[]
+  roots: string[]
+  elapsedMs: number
+}
+
+export function defaultCliRoot(): string {
+  return process.env.CB_CLI_HOME ?? path.join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.codebuddy')
+}
+
+/**
+ * 只读 `logs/` 与 `traces/`：`projects/` 是 CLI 的空壳会话（0 条 usage，且会被误认成 WorkBuddy），
+ * 其余目录（skills / plugins / models.json）与用量无关，不进。
+ */
+export async function readCliData(root: string): Promise<LocalCliData> {
+  const started = performance.now()
+  const logs: LazyLocalFile[] = []
+  const traces: LazyLocalFile[] = []
+  const roots = new Set<string>()
+
+  async function walk(dir: string, segments: string[], depth: number, kind: 'logs' | 'traces') {
+    if (depth > MAX_DEPTH) return
+    let entries
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      const next = [...segments, entry.name]
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        await walk(full, next, depth + 1, kind)
+        continue
+      }
+      if (kind === 'logs') {
+        if (!entry.name.endsWith('.log')) continue
+        roots.add(segments[0] ?? 'logs')
+      } else if (!entry.name.startsWith('trace_') || !entry.name.endsWith('.jsonl')) {
+        continue
+      }
+      const list = kind === 'logs' ? logs : traces
+      list.push({ path: next, read: () => readFile(full, 'utf8') })
+    }
+  }
+
+  for (const kind of ['logs', 'traces'] as const) {
+    const dir = path.join(root, kind)
+    if (!existsSync(dir)) continue
+    await walk(dir, [kind], 0, kind)
+  }
+
+  return { logs, traces, roots: [...roots], elapsedMs: Math.round(performance.now() - started) }
+}
+
 export function defaultPaths(): { root: string; dbPath: string } {
   const local = process.env.LOCALAPPDATA ?? path.join(process.env.HOME ?? '', 'Library/Application Support')
   const roaming = process.env.APPDATA ?? path.join(process.env.HOME ?? '', 'Library/Application Support')

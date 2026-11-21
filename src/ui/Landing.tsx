@@ -47,7 +47,7 @@ export function Landing({
         <BrandMark variant="hero" />
         <h2>AI 用量总账，数据不出这台电脑</h2>
         <p>
-          把 <b>CodeBuddy</b> 或 <b>WorkBuddy</b> 的文件夹<b>拖进窗口</b>。只给一个，就只看这一份；两个都给，就合成一份总账，
+          把 <b>CodeBuddy</b>（IDE 或 CLI）或 <b>WorkBuddy</b> 的文件夹<b>拖进窗口</b>。只给一个，就只看这一份；给齐两端，就合成一份总账，
           并多出一块<b>端对比</b>（两边比一比）。
         </p>
         <p>
@@ -59,7 +59,8 @@ export function Landing({
 
         <PathList />
         <p style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 4 }}>
-          可以分两次拖：后拖的只更新自己那一边。会话库只用来补 CodeBuddy 的标题和项目路径。
+          可以分几次拖：后拖的只更新自己那一边。会话库只用来补 CodeBuddy 的标题和项目路径。
+          CLI 的日志会按天轮转，读进来的部分会存在本机，别清浏览器数据。
         </p>
 
         <div className="hero-actions">
@@ -88,7 +89,7 @@ export function Landing({
               <>
                 Chrome / Edge 会把 <code>AppData</code> 当成系统目录，选择器直接拒绝（提示"此文件夹包含系统文件"）。<em>拖进来不受这个限制</em>：
                 把 <code>…\CodeBuddyExtension\Data</code> 拖到窗口任意位置就行；想要标题和项目路径，再把 <code>codebuddy-sessions.vscdb</code> 一起拖。
-                WorkBuddy 的 <code>~/.workbuddy</code> 一般能直接选，也能直接拖。
+                WorkBuddy 的 <code>~/.workbuddy</code> 与 CLI 的 <code>~/.codebuddy</code> 一般能直接选，也能直接拖。
               </>
             )}
           </span>

@@ -64,6 +64,8 @@ export async function idbDel(key: string): Promise<void> {
 
 const DARK_KEY = 'cb-dark'
 const AUTO_KEY = 'cb-auto-refresh'
+/** 用户明确表示「我没有这个源」后，不再追着提示（只影响提示，不影响数据） */
+const DECLINED_KEY = 'cb-declined-sources'
 
 export const prefs = {
   theme(): 'dark' | 'light' {
@@ -92,6 +94,22 @@ export const prefs = {
   setAutoRefresh(v: boolean) {
     try {
       localStorage.setItem(AUTO_KEY, v ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  },
+  declinedSources(): string[] {
+    try {
+      const raw = localStorage.getItem(DECLINED_KEY)
+      const parsed = raw ? (JSON.parse(raw) as unknown) : []
+      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : []
+    } catch {
+      return []
+    }
+  },
+  setDeclinedSources(v: string[]) {
+    try {
+      localStorage.setItem(DECLINED_KEY, JSON.stringify(v))
     } catch {
       /* ignore */
     }

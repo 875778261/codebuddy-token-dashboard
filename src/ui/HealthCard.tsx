@@ -1,7 +1,8 @@
 import type { Dataset, SourceId } from '../core/types'
 import type { Aggregates } from '../core/aggregate'
+import type { EndGap } from '../core/completeness'
 import type { SourceFreshness } from '../core/freshness'
-import { SOURCE_META, SOURCE_ORDER } from '../core/types'
+import { END_META, SOURCE_META, SOURCE_ORDER } from '../core/types'
 import { dayList, fmtDateTime, fmtInt, fmtPct } from '../core/format'
 import { CoverageStrip } from './widgets'
 
@@ -25,11 +26,15 @@ export function HealthCard({
   agg,
   freshness,
   onExport,
+  onClearArchive,
+  endGapList,
 }: {
   dataset: Dataset
   agg: Aggregates
   freshness: Partial<Record<SourceId, SourceFreshness>>
   onExport: () => void
+  onClearArchive?: () => void
+  endGapList: EndGap[]
 }) {
   const sc = dataset.selfCheck
   const cov = dataset.coverage
@@ -54,11 +59,32 @@ export function HealthCard({
           <div className="sub">每份数据自己查一遍，合并后再核对一次。缺什么直接写出来</div>
         </div>
         <div className="tools">
+          {onClearArchive ? (
+            <button type="button" className="btn ghost" onClick={onClearArchive} title="只清 CodeBuddy CLI 的归档；IDE 与 WorkBuddy 是全量重扫，本来就不需要归档">
+              清空归档
+            </button>
+          ) : null}
           <button type="button" className="btn ghost" onClick={onExport}>
             导出快照
           </button>
         </div>
       </div>
+
+      {/* 端结论留在这里（告警语义）；逐源的路径清单搬到 KPI 下面的「没读到的源」 */}
+      {endGapList.length ? (
+        <div className="completeness-ends">
+          {endGapList.map((gap) => (
+            <span key={gap.end}>
+              <b>{END_META[gap.end].label} 端</b>
+              {gap.loaded.length === 0
+                ? ' 缺数据，端对比不会出现'
+                : gap.missing.length
+                  ? ` 能比，端内缺 ${gap.missing.map((s) => SOURCE_META[s].label).join('、')}`
+                  : ' 完整'}
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       {/* 宽卡两栏：左=自检与覆盖，右=逐源溯源，避免单列在两倍宽里空一半 */}
       <div className="health-cols">
@@ -77,6 +103,14 @@ export function HealthCard({
               bad={!mergeConsistent}
             />
             <Check label="读到的请求" value={fmtInt(sc.requestsWithUsage)} sub={`共 ${fmtInt(sc.requestsTotal)} 条记录`} />
+            {sc.archiveRequests > 0 ? (
+              <Check
+                label="归档补入"
+                value={fmtInt(sc.archiveRequests)}
+                sub="日志已轮转，这部分只在本地归档里"
+                warn
+              />
+            ) : null}
             <Check
               label="重复记录已去掉"
               value={fmtInt(sc.duplicateRequests)}
@@ -138,7 +172,9 @@ export function HealthCard({
                   >
                     加总对不上 {fmtInt(fail)} · 写到一半 {fmtInt(ssc.inFlightSkipped)} · 没有积分字段 {fmtInt(ssc.requestsWithoutCredit)}
                     {ssc.usageZeroFallbacks ? ` · 记录全是 0 的 ${fmtInt(ssc.usageZeroFallbacks)}` : ''}
-                    {ssc.subAgentSessions ? ` · subagent ${fmtInt(ssc.subAgentSessions)}` : ''}
+                    {ssc.creditUnpaired ? ` · 积分配不上 ${fmtInt(ssc.creditUnpaired)}` : ''}
+                    {ssc.archiveRequests ? ` · 归档 ${fmtInt(ssc.archiveRequests)}` : ''}
+                    {ssc.subAgentSessions ? ` · 子会话 ${fmtInt(ssc.subAgentSessions)}` : ''}
                   </div>
                 </div>
               )
@@ -151,12 +187,14 @@ export function HealthCard({
           <div style={{ color: 'var(--ink-4)', fontSize: 11 }}>数据生成于 {fmtDateTime(new Date(dataset.generatedAt).getTime())}</div>
 
           <details className="health-more">
-            <summary>已知缺口 5 条：不是 bug，是数据本身记不全</summary>
+            <summary>已知缺口 7 条：不是 bug，是数据本身记不全</summary>
             <ul className="health-list">
               <li>CodeBuddy 的代码补全只记了耗时，没有 token 和积分，算不进去。</li>
               <li>CodeBuddy 在选中代码里提问，不写进请求记录，会少算。</li>
               <li>WorkBuddy 的会话标题约四成缺失，先留空。</li>
-              <li>两边共用一个积分账户：合并后的积分只是下限，差额补不出来。</li>
+              <li>CodeBuddy CLI 的用量只在 `~/.codebuddy/logs` 里，日志按天轮转：轮转掉的部分只存在于本地归档，清空归档就找不回来。</li>
+              <li>CodeBuddy CLI 的日志里没有会话标题，一律留空；项目取自每份日志首行的 Workspace Path。</li>
+              <li>两端共用一个积分账户：合并后的积分只是下限，差额补不出来。</li>
               <li>本地没有单价，只显示积分，不折算成钱。</li>
             </ul>
           </details>

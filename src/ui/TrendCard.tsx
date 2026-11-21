@@ -3,6 +3,7 @@ import type { Aggregates } from '../core/aggregate'
 import { fmtInt, fmtPct, fmtTokens } from '../core/format'
 import { SOURCE_META, SOURCE_ORDER } from '../core/types'
 import type { Palette } from './theme'
+import { sourceColor } from './theme'
 import { Chart } from './Chart'
 
 export type TrendMode = 'usage' | 'cache' | 'model' | 'source'
@@ -218,7 +219,7 @@ export function TrendCard({
 
     if (mode === 'source') {
       const sources = SOURCE_ORDER.filter((s) => days.some((d) => (d.bySource[s] ?? 0) > 0))
-      const colorOf = (s: (typeof SOURCE_ORDER)[number]) => (s === 'codebuddy' ? palette.models[0] : palette.models[1])
+      const colorOf = (s: (typeof SOURCE_ORDER)[number]) => sourceColor(palette, s)
       return {
         grid,
         xAxis,
@@ -296,7 +297,7 @@ export function TrendCard({
         : mode === 'source'
           ? SOURCE_ORDER.filter((s) => agg.days.some((d) => (d.bySource[s] ?? 0) > 0)).map((s) => ({
               label: SOURCE_META[s].label,
-              color: s === 'codebuddy' ? palette.models[0] : palette.models[1],
+              color: sourceColor(palette, s),
             }))
           : agg.modelDaily.slice(0, MODEL_LIMIT).map((m, i) => ({ label: m.modelKey, color: palette.models[i % palette.models.length] }))
 

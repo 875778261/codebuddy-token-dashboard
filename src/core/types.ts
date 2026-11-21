@@ -1,9 +1,35 @@
 /** 数据契约：所有字段名对齐 CodeBuddy / WorkBuddy 本地文件的真实字段，不做臆造。 */
 
-export type SourceId = 'codebuddy' | 'workbuddy'
+export type SourceId = 'codebuddy' | 'codebuddy-cli' | 'workbuddy'
 
 /** 源顺序：所有按源排列的 UI 与图例都用它，避免各处顺序不一致 */
-export const SOURCE_ORDER: SourceId[] = ['codebuddy', 'workbuddy']
+export const SOURCE_ORDER: SourceId[] = ['codebuddy', 'codebuddy-cli', 'workbuddy']
+
+/**
+ * 端（End）：把源按产品归组后的比较单位。
+ * 端对比、账号消耗下限只在端层成立；源切片视图仍在源层（见 GLOSSARY.md）。
+ */
+export type EndId = 'codebuddy' | 'workbuddy'
+
+export const END_ORDER: EndId[] = ['codebuddy', 'workbuddy']
+
+/** 源 → 端。新增源时必须在这里落位，否则该源的用量不会进端对比 */
+export const END_OF_SOURCE: Record<SourceId, EndId> = {
+  codebuddy: 'codebuddy',
+  'codebuddy-cli': 'codebuddy',
+  workbuddy: 'workbuddy',
+}
+
+/** 端在 UI 上的固定文案 */
+export const END_META: Record<EndId, { label: string; short: string }> = {
+  codebuddy: { label: 'CodeBuddy', short: 'CB' },
+  workbuddy: { label: 'WorkBuddy', short: 'WB' },
+}
+
+/** 某个端由哪些源组成（顺序沿用 SOURCE_ORDER） */
+export function sourcesOfEnd(end: EndId): SourceId[] {
+  return SOURCE_ORDER.filter((s) => END_OF_SOURCE[s] === end)
+}
 
 export interface Usage {
   inputTokens: number
@@ -153,6 +179,10 @@ export interface SelfCheck {
   sessionsWithoutTitle: number
   /** credit 字段缺失的请求数（≠ 积分为 0） */
   requestsWithoutCredit: number
+  /** 日志里有 credit 却配不到请求的条数（CLI 按 rootRequestId 组内顺序配对，配不上就留空） */
+  creditUnpaired: number
+  /** 归档补入的请求数：日志已轮转、只存在于 IndexedDB 归档里的那部分（仅不可重建的源） */
+  archiveRequests: number
   /** 源内 (sessionId,messageId) 重复被丢弃的记录数（WorkBuddy） */
   duplicateRequests: number
   /** usage 整组全零、回落 rawUsage 的次数（WorkBuddy） */
@@ -192,7 +222,7 @@ export interface SourceSummary {
 }
 
 export interface Dataset {
-  schemaVersion: 2
+  schemaVersion: 3
   generatedAt: string
   /** 合并后的采集源汇总（各源计数相加、根目录取并集） */
   sources: SourceInfo
@@ -209,8 +239,12 @@ export interface Dataset {
 
 export type ModelKey = string
 
-/** 源在 UI 上的固定文案与短标签 */
+/**
+ * 源在 UI 上的固定文案与短标签。
+ * IDE 必须写成 `CodeBuddy IDE`：端也叫 CodeBuddy，只写产品名会让「端内缺谁」读成「端缺自己」。
+ */
 export const SOURCE_META: Record<SourceId, { label: string; short: string }> = {
-  codebuddy: { label: 'CodeBuddy', short: 'CB' },
+  codebuddy: { label: 'CodeBuddy IDE', short: 'CB' },
+  'codebuddy-cli': { label: 'CodeBuddy CLI', short: 'CLI' },
   workbuddy: { label: 'WorkBuddy', short: 'WB' },
 }

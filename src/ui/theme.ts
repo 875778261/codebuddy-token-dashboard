@@ -60,6 +60,16 @@ export function getPalette(dark: boolean): Palette {
 
 export const modelColor = (palette: Palette, index: number) => palette.models[index % palette.models.length]
 
+/**
+ * 源的固定配色：CodeBuddy=0、WorkBuddy=1 保持不变（历史图表的颜色语义不漂移），
+ * CLI 取 2。所有按源上色的地方都从这里取，不允许各卡片自己排。
+ */
+export const SOURCE_COLOR_INDEX = { codebuddy: 0, workbuddy: 1, 'codebuddy-cli': 2 } as const
+
+export function sourceColor(palette: Palette, source: keyof typeof SOURCE_COLOR_INDEX): string {
+  return modelColor(palette, SOURCE_COLOR_INDEX[source])
+}
+
 export function heatColor(palette: Palette, level: number): string {
   const idx = Math.max(0, Math.min(palette.heat.length - 1, level))
   return palette.heat[idx]

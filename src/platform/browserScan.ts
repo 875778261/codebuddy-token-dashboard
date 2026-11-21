@@ -1,6 +1,7 @@
 import type { LazyFile, ScannedFile } from '../core/parse'
 import { parseSessionsDb } from '../core/sessions'
 import type { SessionMeta } from '../core/types'
+import { isCliLogPath, isCliTracePath } from '../core/cliParse'
 
 /** 用户大概率会选 Data 根，也可能直接选到 history 或某个账号目录，都允许。 */
 const SKIP_DIRS = new Set([
@@ -28,15 +29,26 @@ const MAX_DEPTH = 9
 const SESSIONS_DB = 'codebuddy-sessions.vscdb'
 /** WorkBuddy 数据根：只有 projects/ 有用量，app/plugins/workspace 合计 900MB+，绝不能进 */
 const WB_ROOT = '.workbuddy'
+/**
+ * CodeBuddy CLI 数据根：只认 logs/（逐请求用量）与 traces/（辅助 agent 标记）。
+ * 其余目录（skills / plugins / projects 空壳 / models.json）一律不进——
+ * 既是为了速度，也是为了不把 models.json 里的 apiKey 读进页面。
+ */
+const CB_CLI_ROOT = '.codebuddy'
+const CB_CLI_SUBDIRS = new Set(['logs', 'traces'])
 
 export interface ScanResult {
   /** CodeBuddy 索引文件（已读文本，体积小） */
   cbFiles: ScannedFile[]
   /** WorkBuddy jsonl（惰性读取，逐个解析后就丢弃） */
   wbFiles: LazyFile[]
+  /** CodeBuddy CLI 日志（惰性读取） */
+  cliLogs: LazyFile[]
+  /** CodeBuddy CLI traces（只用于辅助 agent 判定） */
+  cliTraces: LazyFile[]
   sessionMeta: SessionMeta[]
   sessionsDbName?: string
-  roots: { codebuddy: string[]; workbuddy: string[] }
+  roots: { codebuddy: string[]; codebuddyCli: string[]; workbuddy: string[] }
   scannedAt: string
   elapsedMs: number
 }
@@ -44,8 +56,11 @@ export interface ScanResult {
 interface WalkState {
   cbIndexes: Array<{ indexPath: string[]; handle: FileSystemFileHandle }>
   wbFiles: Array<{ path: string[]; handle: FileSystemFileHandle }>
+  cliLogs: Array<{ path: string[]; handle: FileSystemFileHandle }>
+  cliTraces: Array<{ path: string[]; handle: FileSystemFileHandle }>
   cbRoots: Set<string>
   wbRoots: Set<string>
+  cliRoots: Set<string>
   sessionsDb?: FileSystemFileHandle
   visited: number
 }
@@ -107,9 +122,32 @@ async function walk(dir: DirHandleLike, path: string[], state: WalkState, depth:
     if (isWorkbuddyJsonl(filePath)) {
       pushWorkbuddy(state, filePath, entry as unknown as FileSystemFileHandle)
     }
-    if (onProgress && state.visited % 400 === 0) {
-      onProgress('正在枚举目录…', state.cbIndexes.length + state.wbFiles.length, undefined)
+    if (isCliLogPath(filePath) || isCliTracePath(filePath)) {
+      pushCli(state, filePath, entry as unknown as FileSystemFileHandle)
     }
+    if (onProgress && state.visited % 400 === 0) {
+      onProgress(
+        '正在枚举目录…',
+        state.cbIndexes.length + state.wbFiles.length + state.cliLogs.length + state.cliTraces.length,
+        undefined,
+      )
+    }
+  }
+}
+
+function pushCli(state: WalkState, path: string[], handle: FileSystemFileHandle) {
+  const idx = path.lastIndexOf('logs')
+  if (idx >= 0) state.cliRoots.add(path.slice(0, idx + 1).join('/') || 'logs')
+  if (isCliTracePath(path)) state.cliTraces.push({ path, handle })
+  else state.cliLogs.push({ path, handle })
+}
+
+/** `.codebuddy` 根：只进 logs / traces，且**不进 projects**（那是 CLI 的空壳会话，会被误认成 WorkBuddy） */
+async function walkCodebuddyCliRoot(dir: DirHandleLike, path: string[], state: WalkState, depth: number, onProgress?: Progress) {
+  if (depth > MAX_DEPTH + 2) return
+  for await (const [name, entry] of dir.entries()) {
+    if (entry.kind !== 'directory' || !CB_CLI_SUBDIRS.has(name)) continue
+    await walk(entry as unknown as DirHandleLike, [...path, name], state, depth + 1, onProgress)
   }
 }
 
@@ -171,8 +209,10 @@ export function emptyScanResult(): ScanResult {
   return {
     cbFiles: [],
     wbFiles: [],
+    cliLogs: [],
+    cliTraces: [],
     sessionMeta: [],
-    roots: { codebuddy: [], workbuddy: [] },
+    roots: { codebuddy: [], codebuddyCli: [], workbuddy: [] },
     scannedAt: new Date().toISOString(),
     elapsedMs: 0,
   }
@@ -180,11 +220,22 @@ export function emptyScanResult(): ScanResult {
 
 export async function scanDirectoryHandle(root: FileSystemDirectoryHandle, onProgress?: Progress): Promise<ScanResult> {
   const started = performance.now()
-  const state: WalkState = { cbIndexes: [], wbFiles: [], cbRoots: new Set(), wbRoots: new Set(), visited: 0 }
+  const state: WalkState = {
+    cbIndexes: [],
+    wbFiles: [],
+    cliLogs: [],
+    cliTraces: [],
+    cbRoots: new Set(),
+    wbRoots: new Set(),
+    cliRoots: new Set(),
+    visited: 0,
+  }
   // 带上根目录名：否则 buildDataset 推导出的 history 根只剩 "history"
   const rootName = (root as unknown as DirHandleLike).name
   if (rootName === WB_ROOT) {
     await walkWorkbuddyRoot(root as unknown as DirHandleLike, [rootName], state, 0, onProgress)
+  } else if (rootName === CB_CLI_ROOT) {
+    await walkCodebuddyCliRoot(root as unknown as DirHandleLike, [rootName], state, 0, onProgress)
   } else {
     await walk(root as unknown as DirHandleLike, [rootName], state, 0, onProgress)
   }
@@ -201,13 +252,17 @@ export async function scanDirectoryHandle(root: FileSystemDirectoryHandle, onPro
     if (onProgress && i % 20 === 0) onProgress('正在读取会话索引…', i + 1, state.cbIndexes.length)
   }
 
-  const wbFiles: LazyFile[] = state.wbFiles.map((item) => ({
-    path: item.path,
-    read: async () => {
-      const file = await item.handle.getFile()
-      return file.text()
-    },
-  }))
+  const lazyOf = (list: Array<{ path: string[]; handle: FileSystemFileHandle }>): LazyFile[] =>
+    list.map((item) => ({
+      path: item.path,
+      read: async () => {
+        const file = await item.handle.getFile()
+        return file.text()
+      },
+    }))
+  const wbFiles = lazyOf(state.wbFiles)
+  const cliLogs = lazyOf(state.cliLogs)
+  const cliTraces = lazyOf(state.cliTraces)
 
   let sessionMeta: SessionMeta[] = []
   let sessionsDbName: string | undefined
@@ -225,9 +280,11 @@ export async function scanDirectoryHandle(root: FileSystemDirectoryHandle, onPro
   return {
     cbFiles,
     wbFiles,
+    cliLogs,
+    cliTraces,
     sessionMeta,
     sessionsDbName,
-    roots: { codebuddy: [...state.cbRoots].sort(), workbuddy: [...state.wbRoots].sort() },
+    roots: { codebuddy: [...state.cbRoots].sort(), codebuddyCli: [...state.cliRoots].sort(), workbuddy: [...state.wbRoots].sort() },
     scannedAt: new Date().toISOString(),
     elapsedMs: Math.round(performance.now() - started),
   }
@@ -238,8 +295,11 @@ export async function scanFileList(list: FileList, onProgress?: Progress): Promi
   const started = performance.now()
   const cbFiles: ScannedFile[] = []
   const wbFiles: LazyFile[] = []
+  const cliLogs: LazyFile[] = []
+  const cliTraces: LazyFile[] = []
   const cbRoots = new Set<string>()
   const wbRoots = new Set<string>()
+  const cliRoots = new Set<string>()
   let sessionsDbFile: File | undefined
   let rootName = ''
 
@@ -265,9 +325,19 @@ export async function scanFileList(list: FileList, onProgress?: Progress): Promi
       const idx = segments.lastIndexOf('projects')
       if (idx >= 0) wbRoots.add(segments.slice(0, idx + 1).join('/') || 'projects')
       wbFiles.push({ path: segments, read: () => file.text() })
+      continue
+    }
+    if (isCliLogPath(segments) || isCliTracePath(segments)) {
+      const idx = segments.lastIndexOf('logs')
+      if (idx >= 0) cliRoots.add(segments.slice(0, idx + 1).join('/'))
+      if (isCliTracePath(segments)) cliTraces.push({ path: segments, read: () => file.text() })
+      else cliLogs.push({ path: segments, read: () => file.text() })
     }
   }
-  if (onProgress) onProgress('正在读取会话索引…', cbFiles.length + wbFiles.length, cbFiles.length + wbFiles.length)
+  if (onProgress) {
+    const total = cbFiles.length + wbFiles.length + cliLogs.length + cliTraces.length
+    onProgress('正在读取会话索引…', total, total)
+  }
 
   let sessionMeta: SessionMeta[] = []
   let sessionsDbName: string | undefined
@@ -283,10 +353,12 @@ export async function scanFileList(list: FileList, onProgress?: Progress): Promi
   return {
     cbFiles,
     wbFiles,
+    cliLogs,
+    cliTraces,
     sessionMeta,
     sessionsDbName,
     rootName,
-    roots: { codebuddy: [...cbRoots].sort(), workbuddy: [...wbRoots].sort() },
+    roots: { codebuddy: [...cbRoots].sort(), codebuddyCli: [...cliRoots].sort(), workbuddy: [...wbRoots].sort() },
     scannedAt: new Date().toISOString(),
     elapsedMs: Math.round(performance.now() - started),
   }
